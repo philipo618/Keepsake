@@ -17,7 +17,7 @@ import {
   UploadCloud,
   X,
 } from 'lucide-react';
-import { buildApiUrl } from '../lib/api';
+import { buildApiUrl, hasApiBackend } from '../lib/api';
 import { LICENSED_MUSIC_LIBRARY } from '../lib/audioEngine';
 import {
   createDefaultVideoStudioConfig,
@@ -31,10 +31,12 @@ import { uploadVideoBlob } from '../lib/imageUtils';
 import { renderMusicToAudioBuffer, StudioAudioSyncPlayer } from '../lib/videoAudioPipeline';
 import {
   buildVideoTimeline,
+  detectBrowserVideoCapabilities,
   exportGreetingVideo,
   getExportDimensions,
   loadVideoImageCache,
   renderVideoFrame,
+  type BrowserVideoCapabilities,
   type ExportedVideoResult,
   type ExportVideoProgress,
   type LoadedImageCache,
@@ -113,9 +115,17 @@ export function VideoExportStudio({
   const [currentTimeSec, setCurrentTimeSec] = useState(0);
   const [reducedMotion, setReducedMotion] = useState(false);
 
-  // Backend capabilities
+  // Browser & optional backend capabilities
   const [ffmpegAvailable, setFfmpegAvailable] = useState(false);
-  const [healthChecked, setHealthChecked] = useState(false);
+  const [browserCaps, setBrowserCaps] = useState<BrowserVideoCapabilities>({
+    webCodecsMp4: false,
+    mediaRecorderMp4: false,
+    mediaRecorderWebm: true,
+    webmMimeType: 'video/webm',
+    mp4MimeType: '',
+    preferredWebCodecsVideoCodec: null,
+  });
+  const [capsChecked, setCapsChecked] = useState(false);
 
   // Export state
   const [exporting, setExporting] = useState(false);
@@ -131,15 +141,16 @@ export function VideoExportStudio({
     if (typeof window !== 'undefined' && window.matchMedia) {
       setReducedMotion(window.matchMedia('(prefers-reduced-motion: reduce)').matches);
     }
-    fetch(buildApiUrl('/health'))
-      .then((r) => r.json())
-      .then((data: { ffmpegAvailable?: boolean }) => {
-        setFfmpegAvailable(Boolean(data.ffmpegAvailable));
-      })
-      .catch(() => {
-        setFfmpegAvailable(false);
-      })
-      .finally(() => setHealthChecked(true));
+    if (hasApiBackend()) {
+      fetch(buildApiUrl('/health'))
+        .then((r) => r.json())
+        .then((data: { ffmpegAvailable?: boolean }) => {
+          setFfmpegAvailable(Boolean(data.ffmpegAvailable));
+        })
+        .catch(() => {
+          setFfmpegAvailable(false);
+        });
+    }
 
     audioSyncRef.current = new StudioAudioSyncPlayer();
     return () => {
@@ -151,6 +162,25 @@ export function VideoExportStudio({
       }
     };
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    const dims = getExportDimensions(config.aspectRatio, config.resolution);
+    const needsAudio = greeting.musicConfig.enabled && greeting.musicConfig.sourceType !== 'none';
+    detectBrowserVideoCapabilities(dims.width, dims.height, config.fps, needsAudio)
+      .then((caps) => {
+        if (active) {
+          setBrowserCaps(caps);
+          setCapsChecked(true);
+        }
+      })
+      .catch(() => {
+        if (active) setCapsChecked(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, [config.aspectRatio, config.resolution, config.fps, greeting.musicConfig.enabled, greeting.musicConfig.sourceType]);
 
   // Keep image cache warm whenever photos or background change
   const photoSig = useMemo(
@@ -330,11 +360,7 @@ export function VideoExportStudio({
     abortControllerRef.current = controller;
 
     try {
-      const effectiveConfig: VideoStudioConfig = {
-        ...config,
-        format: config.format === 'mp4' && ffmpegAvailable ? 'mp4' : config.format,
-      };
-      const result = await exportGreetingVideo(greeting, effectiveConfig, {
+      const result = await exportGreetingVideo(greeting, config, {
         signal: controller.signal,
         ffmpegAvailable,
         onProgress: (prog) => setExportProgress(prog),
@@ -1307,22 +1333,28 @@ export function VideoExportStudio({
                   </div>
 
                   {/* Format selection */}
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     {(
                       [
                         {
-                          id: 'mp4',
-                          title: 'MP4 (H.264 / AAC)',
-                          sub: healthChecked
-                            ? ffmpegAvailable
-                              ? 'Server FFmpeg transcode active'
-                              : 'Native MP4 or automatic WebM'
-                            : 'Checking transcode server...',
-                        },
-                        {
                           id: 'webm',
                           title: 'WebM (VP9 / Opus)',
-                          sub: '100% instant browser export',
+                          sub: browserCaps.mediaRecorderWebm
+                            ? 'Primary billing-free browser export (recommended)'
+                            : 'Check browser MediaRecorder support',
+                        },
+                        {
+                          id: 'mp4',
+                          title: 'MP4 (H.264 / AAC)',
+                          sub: !capsChecked
+                            ? 'Checking browser hardware MP4 support...'
+                            : browserCaps.webCodecsMp4
+                            ? 'In-browser WebCodecs H.264 + MP4 muxer (no server)'
+                            : browserCaps.mediaRecorderMp4
+                            ? 'Native browser MediaRecorder MP4 (no server)'
+                            : ffmpegAvailable
+                            ? 'Optional local FFmpeg converter active'
+                            : 'Unsupported on this browser — falls back to WebM',
                         },
                       ] as const
                     ).map((fmt) => {
@@ -1346,6 +1378,25 @@ export function VideoExportStudio({
                       );
                     })}
                   </div>
+
+                  {capsChecked &&
+                    config.format === 'mp4' &&
+                    !browserCaps.webCodecsMp4 &&
+                    !browserCaps.mediaRecorderMp4 &&
+                    !ffmpegAvailable && (
+                      <div className="rounded-xl border border-amber-200 dark:border-amber-900/60 bg-amber-50/70 dark:bg-amber-950/25 p-3 text-[11px] text-amber-800 dark:text-amber-200 flex items-center justify-between gap-2">
+                        <span>
+                          Direct browser H.264 MP4 encoding is unavailable on this browser/device. Exporting will save a genuine verified WebM video instead.
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => updateConfig((c) => ({ ...c, format: 'webm' }))}
+                          className="shrink-0 px-2.5 py-1 rounded-lg bg-amber-700 text-white font-medium"
+                        >
+                          Use WebM
+                        </button>
+                      </div>
+                    )}
 
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                     <label className="block space-y-1">
@@ -1470,7 +1521,11 @@ export function VideoExportStudio({
                     >
                       <Film className="w-4 h-4" />
                       <span>
-                        Generate &amp; Export {config.format === 'mp4' && ffmpegAvailable ? 'MP4' : config.format === 'webm' ? 'WebM' : 'Video'}
+                        Generate &amp; Export{' '}
+                        {config.format === 'mp4' &&
+                        (browserCaps.webCodecsMp4 || browserCaps.mediaRecorderMp4 || ffmpegAvailable)
+                          ? 'MP4'
+                          : 'WebM'}
                       </span>
                     </button>
                   ) : (

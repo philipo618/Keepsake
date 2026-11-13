@@ -1,3 +1,4 @@
+import { ArrayBufferTarget, Muxer } from 'mp4-muxer';
 import { buildApiUrl } from './api';
 import { createDefaultVideoStudioConfig, resolvePhotoTransition, SLIDESHOW_STYLES } from './catalog';
 import { renderMusicToAudioBuffer } from './videoAudioPipeline';
@@ -1430,28 +1431,141 @@ export function renderVideoFrame(
   }
 }
 
-export function getSupportedBrowserMimeType(): { mimeType: string; nativeMp4: boolean } {
+export interface BrowserVideoCapabilities {
+  webCodecsMp4: boolean;
+  mediaRecorderMp4: boolean;
+  mediaRecorderWebm: boolean;
+  webmMimeType: string;
+  mp4MimeType: string;
+  preferredWebCodecsVideoCodec: string | null;
+}
+
+const WEBM_MIME_CANDIDATES = [
+  'video/webm;codecs=vp9,opus',
+  'video/webm;codecs=vp8,opus',
+  'video/webm;codecs=vp9',
+  'video/webm',
+];
+
+const MP4_MIME_CANDIDATES = [
+  'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
+  'video/mp4;codecs=avc1.4d002a,mp4a.40.2',
+  'video/mp4',
+];
+
+const WEBCODECS_H264_PROFILES = [
+  'avc1.4d002a', // Main Profile L4.2 (supports up to 1080p)
+  'avc1.640028', // High Profile L4.0
+  'avc1.42001f', // Baseline L3.1
+  'avc1.42E01E', // Constrained Baseline L3.0
+];
+
+export function getSupportedBrowserMimeType(preferredFormat?: VideoExportFormat): {
+  mimeType: string;
+  nativeMp4: boolean;
+} {
   if (typeof MediaRecorder === 'undefined') {
     return { mimeType: '', nativeMp4: false };
   }
-  const webmCandidates = [
-    'video/webm;codecs=vp9,opus',
-    'video/webm;codecs=vp8,opus',
-    'video/webm;codecs=vp9',
-    'video/webm',
-  ];
-  for (const candidate of webmCandidates) {
+  if (preferredFormat === 'mp4') {
+    for (const candidate of MP4_MIME_CANDIDATES) {
+      if (MediaRecorder.isTypeSupported(candidate)) {
+        return { mimeType: candidate, nativeMp4: true };
+      }
+    }
+  }
+  for (const candidate of WEBM_MIME_CANDIDATES) {
     if (MediaRecorder.isTypeSupported(candidate)) {
       return { mimeType: candidate, nativeMp4: false };
     }
   }
-  const mp4Candidates = ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4'];
-  for (const candidate of mp4Candidates) {
+  for (const candidate of MP4_MIME_CANDIDATES) {
     if (MediaRecorder.isTypeSupported(candidate)) {
       return { mimeType: candidate, nativeMp4: true };
     }
   }
   return { mimeType: '', nativeMp4: false };
+}
+
+export async function detectBrowserVideoCapabilities(
+  width = 1280,
+  height = 720,
+  fps = 30,
+  needsAudio = true
+): Promise<BrowserVideoCapabilities> {
+  let webmMimeType = '';
+  let mp4MimeType = '';
+
+  if (typeof MediaRecorder !== 'undefined') {
+    for (const c of WEBM_MIME_CANDIDATES) {
+      if (MediaRecorder.isTypeSupported(c)) {
+        webmMimeType = c;
+        break;
+      }
+    }
+    for (const c of MP4_MIME_CANDIDATES) {
+      if (MediaRecorder.isTypeSupported(c)) {
+        mp4MimeType = c;
+        break;
+      }
+    }
+  }
+
+  let preferredWebCodecsVideoCodec: string | null = null;
+  let webCodecsAudioOk = !needsAudio;
+
+  const hasWebCodecs =
+    typeof VideoEncoder !== 'undefined' &&
+    typeof VideoFrame !== 'undefined' &&
+    (!needsAudio || (typeof AudioEncoder !== 'undefined' && typeof AudioData !== 'undefined'));
+
+  if (hasWebCodecs) {
+    for (const codec of WEBCODECS_H264_PROFILES) {
+      try {
+        const support = await VideoEncoder.isConfigSupported({
+          codec,
+          width,
+          height,
+          bitrate: 4_200_000,
+          framerate: fps,
+        });
+        if (support.supported) {
+          preferredWebCodecsVideoCodec = codec;
+          break;
+        }
+      } catch {
+        // Probe next H.264 profile
+      }
+    }
+
+    if (preferredWebCodecsVideoCodec && needsAudio) {
+      for (const sampleRate of [48000, 44100]) {
+        try {
+          const audioSupport = await AudioEncoder.isConfigSupported({
+            codec: 'mp4a.40.2',
+            sampleRate,
+            numberOfChannels: 2,
+            bitrate: 160_000,
+          });
+          if (audioSupport.supported) {
+            webCodecsAudioOk = true;
+            break;
+          }
+        } catch {
+          // Try next sample rate
+        }
+      }
+    }
+  }
+
+  return {
+    webCodecsMp4: Boolean(preferredWebCodecsVideoCodec && webCodecsAudioOk),
+    mediaRecorderMp4: Boolean(mp4MimeType),
+    mediaRecorderWebm: Boolean(webmMimeType),
+    webmMimeType,
+    mp4MimeType,
+    preferredWebCodecsVideoCodec,
+  };
 }
 
 export async function verifyVideoBlobContainerAndPlayability(
@@ -1508,6 +1622,185 @@ export async function verifyVideoBlobContainerAndPlayability(
   });
 }
 
+async function exportMp4WithWebCodecs(
+  canvas: HTMLCanvasElement,
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  greeting: Greeting,
+  config: VideoStudioConfig,
+  timeline: VideoTimeline,
+  imageCache: LoadedImageCache,
+  audioBuffer: AudioBuffer | null,
+  videoCodec: string,
+  signal: AbortSignal | undefined,
+  report: (
+    phase: ExportVideoProgress['phase'],
+    percent: number,
+    message: string,
+    etaMs?: number | null
+  ) => void
+): Promise<Blob> {
+  const fps = config.fps;
+  const totalFrames = Math.max(1, Math.round(timeline.totalDurationSec * fps));
+  const frameDurationUs = Math.round(1_000_000 / fps);
+  const bitrate = getBitrateBps(config.resolution, config.quality);
+  const startWallMs = performance.now();
+
+  const target = new ArrayBufferTarget();
+  const hasAudio = Boolean(audioBuffer && audioBuffer.length > 0);
+  const audioChannels = audioBuffer ? Math.min(2, audioBuffer.numberOfChannels) : 2;
+  const audioSampleRate = audioBuffer ? audioBuffer.sampleRate : 48000;
+
+  const muxer = new Muxer({
+    target,
+    video: {
+      codec: 'avc',
+      width,
+      height,
+      frameRate: fps,
+    },
+    ...(hasAudio
+      ? {
+          audio: {
+            codec: 'aac',
+            numberOfChannels: audioChannels,
+            sampleRate: audioSampleRate,
+          },
+        }
+      : {}),
+    fastStart: 'in-memory',
+    firstTimestampBehavior: 'offset',
+  });
+
+  let encoderError: Error | null = null;
+  const videoEncoder = new VideoEncoder({
+    output: (chunk, meta) => {
+      muxer.addVideoChunk(chunk, meta);
+    },
+    error: (err) => {
+      encoderError = err instanceof Error ? err : new Error(String(err));
+    },
+  });
+
+  let audioEncoder: AudioEncoder | null = null;
+  if (hasAudio) {
+    audioEncoder = new AudioEncoder({
+      output: (chunk, meta) => {
+        muxer.addAudioChunk(chunk, meta);
+      },
+      error: (err) => {
+        encoderError = err instanceof Error ? err : new Error(String(err));
+      },
+    });
+  }
+
+  try {
+    videoEncoder.configure({
+      codec: videoCodec,
+      width,
+      height,
+      bitrate,
+      framerate: fps,
+    });
+
+    if (audioEncoder && audioBuffer) {
+      audioEncoder.configure({
+        codec: 'mp4a.40.2',
+        numberOfChannels: audioChannels,
+        sampleRate: audioSampleRate,
+        bitrate: 160_000,
+      });
+
+      const chunkSize = 2048;
+      const totalSamples = audioBuffer.length;
+      for (let offset = 0; offset < totalSamples; offset += chunkSize) {
+        if (signal?.aborted) throw new DOMException('Video export cancelled by user.', 'AbortError');
+        if (encoderError) throw encoderError;
+
+        const framesThisChunk = Math.min(chunkSize, totalSamples - offset);
+        const planarData = new Float32Array(framesThisChunk * audioChannels);
+        for (let ch = 0; ch < audioChannels; ch++) {
+          const srcCh = audioBuffer.getChannelData(Math.min(ch, audioBuffer.numberOfChannels - 1));
+          planarData.set(srcCh.subarray(offset, offset + framesThisChunk), ch * framesThisChunk);
+        }
+
+        const audioData = new AudioData({
+          format: 'f32-planar',
+          sampleRate: audioSampleRate,
+          numberOfFrames: framesThisChunk,
+          numberOfChannels: audioChannels,
+          timestamp: Math.round((offset / audioSampleRate) * 1_000_000),
+          data: planarData,
+        });
+        audioEncoder.encode(audioData);
+        audioData.close();
+
+        if (audioEncoder.encodeQueueSize > 16) {
+          await new Promise((r) => window.setTimeout(r, 4));
+        }
+      }
+    }
+
+    for (let i = 0; i < totalFrames; i++) {
+      if (signal?.aborted) throw new DOMException('Video export cancelled by user.', 'AbortError');
+      if (encoderError) throw encoderError;
+
+      const timeSec = Math.min(timeline.totalDurationSec, i / fps);
+      renderVideoFrame(ctx, width, height, greeting, config, timeline, imageCache, timeSec, false);
+
+      const frame = new VideoFrame(canvas, {
+        timestamp: i * frameDurationUs,
+        duration: frameDurationUs,
+      });
+      try {
+        videoEncoder.encode(frame, { keyFrame: i % (fps * 2) === 0 });
+      } finally {
+        frame.close();
+      }
+
+      if (i % 4 === 0 || i === totalFrames - 1) {
+        const frac = (i + 1) / totalFrames;
+        const elapsedMs = performance.now() - startWallMs;
+        const etaMs = frac > 0.04 ? Math.max(0, (elapsedMs / frac) * (1 - frac)) : null;
+        report(
+          'rendering',
+          15 + frac * 78,
+          `Encoding MP4 frame ${i + 1}/${totalFrames} (${timeSec.toFixed(1)}s / ${timeline.totalDurationSec.toFixed(1)}s)...`,
+          etaMs
+        );
+      }
+
+      // Backpressure & main-thread yield to keep UI responsive & memory bounded
+      if (videoEncoder.encodeQueueSize > 6 || i % 6 === 0) {
+        await new Promise((r) => window.setTimeout(r, videoEncoder.encodeQueueSize > 6 ? 12 : 0));
+      }
+    }
+
+    if (encoderError) throw encoderError;
+    report('verifying', 93, 'Finalizing MP4 container...');
+    await videoEncoder.flush();
+    if (audioEncoder) {
+      await audioEncoder.flush();
+    }
+    if (encoderError) throw encoderError;
+
+    muxer.finalize();
+    return new Blob([target.buffer], { type: 'video/mp4' });
+  } finally {
+    try {
+      if (videoEncoder.state !== 'closed') videoEncoder.close();
+    } catch {
+      // Ignore
+    }
+    try {
+      if (audioEncoder && audioEncoder.state !== 'closed') audioEncoder.close();
+    } catch {
+      // Ignore
+    }
+  }
+}
+
 export async function exportGreetingVideo(
   greeting: Greeting,
   config: VideoStudioConfig,
@@ -1536,10 +1829,6 @@ export async function exportGreetingVideo(
     });
   };
 
-  if (typeof MediaRecorder === 'undefined') {
-    throw new Error('This browser does not support MediaRecorder video encoding. Try modern Chrome, Edge, or Firefox.');
-  }
-
   const timeline = buildVideoTimeline(greeting, config);
   const { width, height } = getExportDimensions(config.aspectRatio, config.resolution);
 
@@ -1563,160 +1852,202 @@ export async function exportGreetingVideo(
 
     if (signal?.aborted) throw new DOMException('Export cancelled.', 'AbortError');
 
-    const { mimeType, nativeMp4 } = getSupportedBrowserMimeType();
-    if (!mimeType) {
-      throw new Error('No supported video codec was found in MediaRecorder.');
-    }
-
     const canvas = document.createElement('canvas');
     canvas.width = width;
     canvas.height = height;
     const ctx = canvas.getContext('2d', { alpha: false });
     if (!ctx) throw new Error('Unable to acquire 2D rendering canvas.');
 
-    // Render frame 0 before starting captureStream
+    // Render frame 0 before encoding starts
     renderVideoFrame(ctx, width, height, greeting, config, timeline, imageCache, 0, false);
 
-    const videoStream = canvas.captureStream(config.fps);
-    const combinedTracks: MediaStreamTrack[] = [...videoStream.getVideoTracks()];
+    const caps = await detectBrowserVideoCapabilities(width, height, config.fps, Boolean(audioRes.buffer));
 
-    if (audioRes.buffer) {
-      const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-      audioCtx = new Ctx();
-      if (audioCtx.state === 'suspended') {
-        await audioCtx.resume().catch(() => {});
+    let finalBlob: Blob | null = null;
+    let finalFormat: VideoExportFormat = 'webm';
+    let finalMime = 'video/webm';
+
+    // Tier 1 for MP4: Billing-free client-side WebCodecs + mp4-muxer (H.264 + AAC)
+    if (config.format === 'mp4' && caps.webCodecsMp4 && caps.preferredWebCodecsVideoCodec) {
+      try {
+        finalBlob = await exportMp4WithWebCodecs(
+          canvas,
+          ctx,
+          width,
+          height,
+          greeting,
+          config,
+          timeline,
+          imageCache,
+          audioRes.buffer,
+          caps.preferredWebCodecsVideoCodec,
+          signal,
+          report
+        );
+        finalFormat = 'mp4';
+        finalMime = 'video/mp4';
+      } catch (wcErr) {
+        if ((wcErr as Error)?.name === 'AbortError') throw wcErr;
+        warnings.push('In-browser H.264 hardware encoder unavailable here; falling back to MediaRecorder.');
+        finalBlob = null;
       }
-      const dest = audioCtx.createMediaStreamDestination();
-      audioSource = audioCtx.createBufferSource();
-      audioSource.buffer = audioRes.buffer;
-      audioSource.connect(dest);
-      combinedTracks.push(...dest.stream.getAudioTracks());
     }
 
-    const combinedStream = new MediaStream(combinedTracks);
-    const bitrate = getBitrateBps(config.resolution, config.quality);
-    const recorder = new MediaRecorder(combinedStream, {
-      mimeType,
-      videoBitsPerSecond: bitrate,
-      audioBitsPerSecond: 160_000,
-    });
-
-    const chunks: BlobPart[] = [];
-    recorder.ondataavailable = (ev) => {
-      if (ev.data && ev.data.size > 0) chunks.push(ev.data);
-    };
-
-    const recordedBlob = await new Promise<Blob>((resolve, reject) => {
-      let stopped = false;
-      let frameTimer: number | null = null;
-
-      const cleanupTimers = () => {
-        if (frameTimer !== null) {
-          window.clearInterval(frameTimer);
-          frameTimer = null;
-        }
-        signal?.removeEventListener('abort', onAbort);
-      };
-
-      const onAbort = () => {
-        if (stopped) return;
-        stopped = true;
-        cleanupTimers();
-        try {
-          if (recorder.state !== 'inactive') recorder.stop();
-        } catch {
-          // Ignore
-        }
-        reject(new DOMException('Video export cancelled by user.', 'AbortError'));
-      };
-
-      signal?.addEventListener('abort', onAbort);
-
-      recorder.onerror = () => {
-        if (stopped) return;
-        stopped = true;
-        cleanupTimers();
-        reject(new Error('MediaRecorder failed while encoding video frames.'));
-      };
-
-      recorder.onstop = () => {
-        if (stopped) return;
-        stopped = true;
-        cleanupTimers();
-        resolve(new Blob(chunks, { type: mimeType }));
-      };
-
-      const renderStartMs = performance.now();
-      const totalMs = timeline.totalDurationSec * 1000;
-      const frameStepMs = 1000 / config.fps;
-
-      recorder.start(250);
-      audioSource?.start(0);
-
-      frameTimer = window.setInterval(() => {
-        if (stopped) return;
-        const elapsed = performance.now() - renderStartMs;
-        const timeSec = Math.min(timeline.totalDurationSec, elapsed / 1000);
-        renderVideoFrame(ctx, width, height, greeting, config, timeline, imageCache, timeSec, false);
-
-        const frac = Math.min(1, elapsed / totalMs);
-        const pct = 15 + frac * (config.format === 'mp4' && !nativeMp4 ? 62 : 78);
-        const remainingMs = Math.max(0, totalMs - elapsed);
-        report(
-          'rendering',
-          pct,
-          `Rendering frames (${timeSec.toFixed(1)}s / ${timeline.totalDurationSec.toFixed(1)}s)...`,
-          remainingMs
+    // Tier 2: Browser-native MediaRecorder (WebM primary or native MediaRecorder MP4)
+    if (!finalBlob) {
+      if (typeof MediaRecorder === 'undefined') {
+        throw new Error(
+          'This browser does not support MediaRecorder or WebCodecs video encoding. Try modern Chrome, Edge, Firefox, or Safari.'
         );
+      }
 
-        if (elapsed >= totalMs + 80) {
+      const preferNativeMp4 = config.format === 'mp4' && caps.mediaRecorderMp4;
+      const { mimeType, nativeMp4 } = getSupportedBrowserMimeType(preferNativeMp4 ? 'mp4' : 'webm');
+      if (!mimeType) {
+        throw new Error('No supported MediaRecorder video codec was found in this browser.');
+      }
+
+      const videoStream = canvas.captureStream(config.fps);
+      const combinedTracks: MediaStreamTrack[] = [...videoStream.getVideoTracks()];
+
+      if (audioRes.buffer) {
+        const Ctx =
+          window.AudioContext ||
+          (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+        audioCtx = new Ctx();
+        if (audioCtx.state === 'suspended') {
+          await audioCtx.resume().catch(() => {});
+        }
+        const dest = audioCtx.createMediaStreamDestination();
+        audioSource = audioCtx.createBufferSource();
+        audioSource.buffer = audioRes.buffer;
+        audioSource.connect(dest);
+        combinedTracks.push(...dest.stream.getAudioTracks());
+      }
+
+      const combinedStream = new MediaStream(combinedTracks);
+      const bitrate = getBitrateBps(config.resolution, config.quality);
+      const recorder = new MediaRecorder(combinedStream, {
+        mimeType,
+        videoBitsPerSecond: bitrate,
+        audioBitsPerSecond: 160_000,
+      });
+
+      const chunks: BlobPart[] = [];
+      recorder.ondataavailable = (ev) => {
+        if (ev.data && ev.data.size > 0) chunks.push(ev.data);
+      };
+
+      const recordedBlob = await new Promise<Blob>((resolve, reject) => {
+        let stopped = false;
+        let frameTimer: number | null = null;
+
+        const cleanupTimers = () => {
           if (frameTimer !== null) {
             window.clearInterval(frameTimer);
             frameTimer = null;
           }
+          signal?.removeEventListener('abort', onAbort);
+        };
+
+        const onAbort = () => {
+          if (stopped) return;
+          stopped = true;
+          cleanupTimers();
           try {
-            audioSource?.stop();
+            if (recorder.state !== 'inactive') recorder.stop();
           } catch {
             // Ignore
           }
-          if (recorder.state !== 'inactive') {
-            recorder.stop();
+          reject(new DOMException('Video export cancelled by user.', 'AbortError'));
+        };
+
+        signal?.addEventListener('abort', onAbort);
+
+        recorder.onerror = () => {
+          if (stopped) return;
+          stopped = true;
+          cleanupTimers();
+          reject(new Error('MediaRecorder failed while encoding video frames.'));
+        };
+
+        recorder.onstop = () => {
+          if (stopped) return;
+          stopped = true;
+          cleanupTimers();
+          resolve(new Blob(chunks, { type: mimeType }));
+        };
+
+        const renderStartMs = performance.now();
+        const totalMs = timeline.totalDurationSec * 1000;
+        const frameStepMs = 1000 / config.fps;
+
+        recorder.start(250);
+        audioSource?.start(0);
+
+        frameTimer = window.setInterval(() => {
+          if (stopped) return;
+          const elapsed = performance.now() - renderStartMs;
+          const timeSec = Math.min(timeline.totalDurationSec, elapsed / 1000);
+          renderVideoFrame(ctx, width, height, greeting, config, timeline, imageCache, timeSec, false);
+
+          const frac = Math.min(1, elapsed / totalMs);
+          const pct = 15 + frac * (config.format === 'mp4' && !nativeMp4 && ffmpegAvailable ? 62 : 78);
+          const remainingMs = Math.max(0, totalMs - elapsed);
+          report(
+            'rendering',
+            pct,
+            `Recording browser stream (${timeSec.toFixed(1)}s / ${timeline.totalDurationSec.toFixed(1)}s)...`,
+            remainingMs
+          );
+
+          if (elapsed >= totalMs + 80) {
+            if (frameTimer !== null) {
+              window.clearInterval(frameTimer);
+              frameTimer = null;
+            }
+            try {
+              audioSource?.stop();
+            } catch {
+              // Ignore
+            }
+            if (recorder.state !== 'inactive') {
+              recorder.stop();
+            }
           }
+        }, Math.max(16, Math.round(frameStepMs)));
+      });
+
+      if (signal?.aborted) throw new DOMException('Export cancelled.', 'AbortError');
+
+      finalBlob = recordedBlob;
+      finalFormat = nativeMp4 ? 'mp4' : 'webm';
+      finalMime = nativeMp4 ? 'video/mp4' : 'video/webm';
+
+      if (config.format === 'mp4' && !nativeMp4) {
+        if (ffmpegAvailable) {
+          report('transcoding', 80, 'Converting to H.264 MP4 via local FFmpeg...');
+          const transcodeUrl = buildApiUrl(
+            `/video/transcode?fps=${config.fps}&quality=${config.quality}&title=${encodeURIComponent(greeting.title || 'Memory')}`
+          );
+          const resp = await fetch(transcodeUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'video/webm' },
+            body: recordedBlob,
+            signal,
+          });
+          if (!resp.ok) {
+            const errPayload = (await resp.json().catch(() => ({}))) as { error?: string };
+            throw new Error(errPayload.error || `MP4 transcoding failed (HTTP ${resp.status}).`);
+          }
+          finalBlob = await resp.blob();
+          finalFormat = 'mp4';
+          finalMime = 'video/mp4';
+        } else {
+          warnings.push(
+            'MP4 encoding is unavailable on this browser/device without a server transcoder. Exported verified WebM instead without altering file extension.'
+          );
         }
-      }, Math.max(16, Math.round(frameStepMs)));
-    });
-
-    if (signal?.aborted) throw new DOMException('Export cancelled.', 'AbortError');
-
-    let finalBlob = recordedBlob;
-    let finalFormat: VideoExportFormat = nativeMp4 ? 'mp4' : 'webm';
-    let finalMime = nativeMp4 ? 'video/mp4' : 'video/webm';
-
-    if (config.format === 'mp4' && !nativeMp4) {
-      if (!ffmpegAvailable) {
-        warnings.push(
-          'Server FFmpeg MP4 transcoding endpoint is not active in this static host. Saved verified native WebM without mislabeling extension.'
-        );
-      } else {
-        report('transcoding', 80, 'Converting to universally playable H.264 MP4 via FFmpeg...');
-        const transcodeUrl = buildApiUrl(
-          `/video/transcode?fps=${config.fps}&quality=${config.quality}&title=${encodeURIComponent(greeting.title || 'Memory')}`
-        );
-        const resp = await fetch(transcodeUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'video/webm',
-          },
-          body: recordedBlob,
-          signal,
-        });
-        if (!resp.ok) {
-          const errPayload = (await resp.json().catch(() => ({}))) as { error?: string };
-          throw new Error(errPayload.error || `MP4 transcoding failed (HTTP ${resp.status}).`);
-        }
-        finalBlob = await resp.blob();
-        finalFormat = 'mp4';
-        finalMime = 'video/mp4';
       }
     }
 

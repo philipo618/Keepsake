@@ -1,5 +1,5 @@
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
-import { buildApiUrl } from './api';
+import { buildApiUrl, hasApiBackend } from './api';
 import { auth, storage } from './firebase';
 
 export async function compressImageFile(file: File, maxDimension = 1600, quality = 0.82): Promise<{ dataUrl: string; blob: Blob }> {
@@ -92,6 +92,11 @@ export async function uploadMediaFile(
     const url = await getDownloadURL(snap.ref);
     return { url, sizeBytes: uploadBlob.size, storageProvider: 'firebase-storage' };
   } catch {
+    if (!hasApiBackend()) {
+      throw new Error(
+        'Firebase Storage upload failed or is unavailable in this static deployment. Ensure Firebase Storage and CORS rules are configured, or use an open image URL / library track.'
+      );
+    }
     // Fallback to protected Express media upload endpoint
     const idToken = await user.getIdToken();
     const resp = await fetch(buildApiUrl('/media/upload'), {
@@ -142,6 +147,11 @@ export async function uploadVideoBlob(
     const url = await getDownloadURL(snap.ref);
     return { url, sizeBytes: blob.size, storageProvider: 'firebase-storage' };
   } catch {
+    if (!hasApiBackend()) {
+      throw new Error(
+        'Firebase Storage upload failed or timed out (no backend server is configured). You can still download your rendered video directly to your device at zero cost.'
+      );
+    }
     const idToken = await user.getIdToken();
     const resp = await fetch(buildApiUrl(`/video/upload?fileName=${encodeURIComponent(safeName)}`), {
       method: 'POST',

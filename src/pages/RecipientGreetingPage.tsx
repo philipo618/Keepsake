@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Gift, ShieldAlert } from 'lucide-react';
 import { GreetingExperience } from '../components/GreetingExperience';
 import { VerificationGate, type UnlockedGreetingPayload } from '../components/VerificationGate';
-import { buildApiUrl } from '../lib/api';
+import { buildApiUrl, hasApiBackend } from '../lib/api';
 import { fetchGreetingById } from '../lib/firestoreService';
 import type { AppRoute } from '../components/Navbar';
 import type { Greeting } from '../lib/types';
@@ -36,8 +36,10 @@ export function RecipientGreetingPage({
         if (docData.accessMode === 'direct') {
           setVerified(true);
         }
-        // Record view safely using normalized API URL
-        fetch(buildApiUrl(`/greetings/${greetingId}/view`), { method: 'POST' }).catch(() => {});
+        // Record view safely when backend API is present
+        if (hasApiBackend()) {
+          fetch(buildApiUrl(`/greetings/${greetingId}/view`), { method: 'POST' }).catch(() => {});
+        }
       })
       .catch((err) => {
         if (!active) return;
@@ -56,11 +58,13 @@ export function RecipientGreetingPage({
   }, [greetingId]);
 
   const handleReport = async () => {
-    await fetch(buildApiUrl(`/greetings/${greetingId}/report`), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ reason: 'User reported from greeting page' }),
-    }).catch(() => {});
+    if (hasApiBackend()) {
+      await fetch(buildApiUrl(`/greetings/${greetingId}/report`), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: 'User reported from greeting page' }),
+      }).catch(() => {});
+    }
     setReportSubmitted(true);
   };
 

@@ -14,7 +14,7 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 import { auth, db, handleFirestoreError, OperationType } from './firebase';
-import { buildApiUrl } from './api';
+import { buildApiUrl, hasApiBackend } from './api';
 import { DEFAULT_CATEGORIES, DEFAULT_PLATFORM_SETTINGS, DEFAULT_TEMPLATES } from './catalog';
 import { LICENSED_MUSIC_LIBRARY } from './audioEngine';
 import { STUDIO_ASSETS } from './assets';
@@ -251,6 +251,11 @@ export async function saveGreeting(
   if (!user) throw new Error('Sign in required to save greetings.');
 
   const isInteractive = greeting.accessMode === 'interactive';
+  if (isInteractive && !hasApiBackend()) {
+    throw new Error(
+      'Interactive verification (Mode B) requires a verification backend URL (VITE_API_BASE_URL) to keep answers private and rate-limited. Switch to Mode A (Direct Access) for 100% billing-free static GitHub Pages publishing.'
+    );
+  }
   const greetingRef = doc(db, 'greetings', greeting.id);
   const existingSnap = await getDoc(greetingRef);
 
@@ -430,7 +435,7 @@ export async function deleteGreetingDraft(greetingId: string): Promise<void> {
     const secretRef = doc(db, 'greetings', greetingId, 'secrets', 'verification');
     await deleteDoc(secretRef).catch(() => {});
     await deleteDoc(doc(db, 'greetings', greetingId));
-    if (auth.currentUser) {
+    if (auth.currentUser && hasApiBackend()) {
       const idToken = await auth.currentUser.getIdToken();
       await fetch(buildApiUrl(`/greetings/${greetingId}/secrets`), {
         method: 'DELETE',

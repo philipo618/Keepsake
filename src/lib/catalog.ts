@@ -723,7 +723,7 @@ export function createDefaultVideoStudioConfig(greeting?: Partial<Greeting>): Vi
     resolution: '720p',
     fps: 30,
     quality: 'high',
-    format: 'mp4',
+    format: 'webm',
     slideshowStyle: preset.id,
     photoPresentation: preset.defaultPresentation,
     slideDurationSec: slideSec,

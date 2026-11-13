@@ -72,9 +72,10 @@ git push -u origin main
 4. Trigger or push to `main` to run `.github/workflows/deploy-gh-pages.yml`.
 5. `public/404.html` and `index.html` automatically preserve direct `/g/:id` URLs and browser refreshes on GitHub Pages.
 
-## Step 10: Video Export Pipeline (MP4 vs WebM)
-- **Full-Stack / Express / Cloud Run Host (with FFmpeg)**: `server.ts` includes `POST /api/video/transcode` backed by `ffmpeg` (`libx264` + `aac` + `faststart`), producing universally playable `.mp4` files as well as browser-native `.webm`.
-- **Static GitHub Pages Without Custom Express/Cloud Run Backend**: Browser `MediaRecorder` natively exports genuine `.webm` video files (and native `.mp4` only on browsers whose `MediaRecorder` natively implements H.264/MP4). Standard Firebase Cloud Functions v2 without a custom Docker/FFmpeg binary do not expose `POST /api/video/transcode`, so deploy `server.ts` to Cloud Run (or point `VITE_API_BASE_URL` to a Cloud Run container with `ffmpeg` installed) if server-side MP4 conversion is required on GitHub Pages.
+## Step 10: Billing-Free Browser Video Export (WebM & In-Browser MP4)
+- **Zero-Backend GitHub Pages Export**: Keepsake renders videos 100% in the browser using `canvas.captureStream` + `MediaRecorder` for universal **WebM (VP9 / Opus)** with synchronized audio, and client-side **WebCodecs + `mp4-muxer`** (or native `MediaRecorder` MP4) for genuine **H.264 / AAC `.mp4`** on supported browsers — **no Cloud Run, no Cloud Functions billing, and no `/api/video/transcode` required**.
+- On browsers that do not support in-browser H.264 hardware encoding, Keepsake exports verified native **WebM** automatically without mislabeling the container.
+- Optional self-hosted `server.ts` (`/api/video/transcode`) remains available as a bonus fallback when running the local Node server with FFmpeg installed.
 
 ## Step 11: Post-Deployment Acceptance Checklist
 1. Sign in as the authorized administrator (`philipodickson96@gmail.com`) at `/admin` and click **Seed Default Catalog** to populate Firestore `categories`, `templates`, `mediaLibrary`, and `platformSettings`.

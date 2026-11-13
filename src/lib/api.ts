@@ -9,6 +9,21 @@ export function getNormalizedApiBase(): string {
   return raw.replace(/\/+$/, '');
 }
 
+/**
+ * Returns true when running on a static GitHub Pages host (or any non-local static host)
+ * with no VITE_API_BASE_URL configured.
+ */
+export function isStaticHostWithoutBackend(): boolean {
+  if (getNormalizedApiBase()) return false;
+  if (typeof window === 'undefined') return false;
+  const host = window.location.hostname.toLowerCase();
+  return host.endsWith('.github.io');
+}
+
+export function hasApiBackend(): boolean {
+  return !isStaticHostWithoutBackend();
+}
+
 export function buildApiUrl(endpointPath: string): string {
   const cleanEndpoint = endpointPath.startsWith('/') ? endpointPath : `/${endpointPath}`;
   const withoutApiPrefix = cleanEndpoint.startsWith('/api/')
