@@ -1838,6 +1838,7 @@ export async function exportGreetingVideo(
 
   let audioCtx: AudioContext | null = null;
   let audioSource: AudioBufferSourceNode | null = null;
+  let activeMediaTracks: MediaStreamTrack[] = [];
 
   try {
     if (signal?.aborted) throw new DOMException('Export cancelled.', 'AbortError');
@@ -1909,6 +1910,7 @@ export async function exportGreetingVideo(
 
       const videoStream = canvas.captureStream(config.fps);
       const combinedTracks: MediaStreamTrack[] = [...videoStream.getVideoTracks()];
+      activeMediaTracks = combinedTracks;
 
       if (audioRes.buffer) {
         const Ctx =
@@ -2079,6 +2081,13 @@ export async function exportGreetingVideo(
       audioSource?.disconnect();
     } catch {
       // Ignore
+    }
+    for (const track of activeMediaTracks) {
+      try {
+        track.stop();
+      } catch {
+        // Ignore
+      }
     }
     if (audioCtx && audioCtx.state !== 'closed') {
       audioCtx.close().catch(() => {});

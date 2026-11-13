@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react';
-import { CheckCircle2, Delete, Lock, RotateCcw } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { CheckCircle2, Delete, Lock, RotateCcw, ShieldAlert } from 'lucide-react';
 import { triggerConfettiCelebration } from './AnimationCanvas';
+import { hasApiBackend, verifyApiBackendReachable } from '../lib/api';
 import { audioEngine } from '../lib/audioEngine';
 import { checkVerificationStep, verifyFullGreeting } from '../lib/firestoreService';
 import type {
@@ -57,6 +58,27 @@ export function VerificationGate({
   const [stepFeedback, setStepFeedback] = useState<string | null>(null);
   const [lockedOut, setLockedOut] = useState(false);
   const [previewAttempts, setPreviewAttempts] = useState(0);
+  const [backendUnavailable, setBackendUnavailable] = useState(() => !previewMode && !hasApiBackend());
+
+  useEffect(() => {
+    if (previewMode) {
+      setBackendUnavailable(false);
+      return;
+    }
+    if (!hasApiBackend()) {
+      setBackendUnavailable(true);
+      return;
+    }
+    let active = true;
+    verifyApiBackendReachable().then((live) => {
+      if (active && !live) {
+        setBackendUnavailable(true);
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [previewMode]);
 
   const stages = useMemo<VerificationStage[]>(() => {
     const list: VerificationStage[] = [];
@@ -388,7 +410,17 @@ export function VerificationGate({
         )}
       </div>
 
-      {celebratingMsg ? (
+      {backendUnavailable ? (
+        <div className="py-6 text-center space-y-3">
+          <ShieldAlert className="w-10 h-10 text-amber-600 dark:text-amber-400 mx-auto" />
+          <h2 className="font-display text-xl font-semibold text-slate-900 dark:text-white">
+            Verification Service Unavailable
+          </h2>
+          <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
+            This greeting uses protected Interactive Access (Mode B). To keep private answers and sealed keepsake content secure, verification must be handled by the creator&apos;s connected verification backend rather than in browser code.
+          </p>
+        </div>
+      ) : celebratingMsg ? (
         <div className="py-12 text-center space-y-3 animate-reveal-up">
           <CheckCircle2 className="w-12 h-12 text-emerald-600 mx-auto" />
           <p className="font-display text-2xl font-semibold text-slate-900 dark:text-white">

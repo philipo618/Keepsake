@@ -1,5 +1,5 @@
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
-import { buildApiUrl, hasApiBackend } from './api';
+import { buildApiUrl, hasApiBackend, verifyApiBackendReachable } from './api';
 import { auth, storage } from './firebase';
 
 export async function compressImageFile(file: File, maxDimension = 1600, quality = 0.82): Promise<{ dataUrl: string; blob: Blob }> {
@@ -91,10 +91,12 @@ export async function uploadMediaFile(
     ]);
     const url = await getDownloadURL(snap.ref);
     return { url, sizeBytes: uploadBlob.size, storageProvider: 'firebase-storage' };
-  } catch {
-    if (!hasApiBackend()) {
+  } catch (storageErr) {
+    const canFallback = hasApiBackend() && (await verifyApiBackendReachable());
+    if (!canFallback) {
+      const code = (storageErr as { code?: string })?.code || '';
       throw new Error(
-        'Firebase Storage upload failed or is unavailable in this static deployment. Ensure Firebase Storage and CORS rules are configured, or use an open image URL / library track.'
+        `Firebase Storage upload is unavailable${code ? ` (${code})` : ''} in this static deployment. Use Licensed Stock Search, Studio Artwork, or an External Image URL instead—all work free without Cloud Storage.`
       );
     }
     // Fallback to protected Express media upload endpoint
@@ -146,10 +148,12 @@ export async function uploadVideoBlob(
     ]);
     const url = await getDownloadURL(snap.ref);
     return { url, sizeBytes: blob.size, storageProvider: 'firebase-storage' };
-  } catch {
-    if (!hasApiBackend()) {
+  } catch (storageErr) {
+    const canFallback = hasApiBackend() && (await verifyApiBackendReachable());
+    if (!canFallback) {
+      const code = (storageErr as { code?: string })?.code || '';
       throw new Error(
-        'Firebase Storage upload failed or timed out (no backend server is configured). You can still download your rendered video directly to your device at zero cost.'
+        `Firebase Storage upload is unavailable${code ? ` (${code})` : ''} without a connected backend. You can still download the rendered video directly to your device at zero cost.`
       );
     }
     const idToken = await user.getIdToken();

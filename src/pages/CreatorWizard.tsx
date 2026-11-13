@@ -34,7 +34,7 @@ import {
   STICKER_PALETTE,
 } from '../lib/catalog';
 import { audioEngine, LICENSED_MUSIC_LIBRARY } from '../lib/audioEngine';
-import { hasApiBackend } from '../lib/api';
+import { hasApiBackend, verifyApiBackendReachable } from '../lib/api';
 import { uploadMediaFile } from '../lib/imageUtils';
 import {
   fetchGreetingById,
@@ -164,6 +164,7 @@ export function CreatorWizard({
   const [previewGateUnlocked, setPreviewGateUnlocked] = useState(false);
   const [previewResetSeed, setPreviewResetSeed] = useState(0);
   const [publishedShareId, setPublishedShareId] = useState<string | null>(null);
+  const [backendLive, setBackendLive] = useState(() => hasApiBackend());
 
   const openFullPreview = () => {
     setPreviewGateUnlocked(false);
@@ -172,6 +173,9 @@ export function CreatorWizard({
   };
 
   useEffect(() => {
+    if (hasApiBackend()) {
+      verifyApiBackendReachable().then((live) => setBackendLive(live));
+    }
     fetchMediaLibrary(false).then((items) => {
       setAdminMusicAssets(items.filter((i) => i.type === 'music'));
     });
@@ -1584,9 +1588,9 @@ export function CreatorWizard({
 
               {greeting.accessMode === 'interactive' && (
                 <div className="space-y-5 rounded-xl border border-slate-200 dark:border-slate-800 p-4 sm:p-5 bg-slate-50/60 dark:bg-slate-900/40">
-                  {!hasApiBackend() && (
+                  {!backendLive && (
                     <div className="rounded-lg border border-amber-200 dark:border-amber-900/60 bg-amber-50/80 dark:bg-amber-950/30 p-3 text-xs text-amber-800 dark:text-amber-200">
-                      Previewing Mode B works locally here, while publishing a locked Mode B link requires a verification backend URL (VITE_API_BASE_URL). For 100% static billing-free GitHub Pages publishing, use Mode A (Direct Access).
+                      Creator preview of Mode B works locally here, while publishing a locked Mode B link requires a verification backend URL (VITE_API_BASE_URL). Switch to Mode A (Direct Access) for 100% billing-free static GitHub Pages publishing.
                     </div>
                   )}
                   <div className="space-y-3">

@@ -14,7 +14,7 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 import { auth, db, handleFirestoreError, OperationType } from './firebase';
-import { buildApiUrl, hasApiBackend } from './api';
+import { buildApiUrl, hasApiBackend, verifyApiBackendReachable } from './api';
 import { DEFAULT_CATEGORIES, DEFAULT_PLATFORM_SETTINGS, DEFAULT_TEMPLATES } from './catalog';
 import { LICENSED_MUSIC_LIBRARY } from './audioEngine';
 import { STUDIO_ASSETS } from './assets';
@@ -251,10 +251,13 @@ export async function saveGreeting(
   if (!user) throw new Error('Sign in required to save greetings.');
 
   const isInteractive = greeting.accessMode === 'interactive';
-  if (isInteractive && !hasApiBackend()) {
-    throw new Error(
-      'Interactive verification (Mode B) requires a verification backend URL (VITE_API_BASE_URL) to keep answers private and rate-limited. Switch to Mode A (Direct Access) for 100% billing-free static GitHub Pages publishing.'
-    );
+  if (isInteractive) {
+    const backendLive = hasApiBackend() && (await verifyApiBackendReachable());
+    if (!backendLive) {
+      throw new Error(
+        'Interactive verification (Mode B) requires a verification backend URL (VITE_API_BASE_URL) to keep answers private and rate-limited. Switch to Mode A (Direct Access) for 100% billing-free static GitHub Pages publishing.'
+      );
+    }
   }
   const greetingRef = doc(db, 'greetings', greeting.id);
   const existingSnap = await getDoc(greetingRef);
@@ -365,7 +368,8 @@ export async function saveGreeting(
           unlockedPayload,
         }),
       });
-      if (!resp.ok) {
+      const contentType = resp.headers.get('content-type') || '';
+      if (!resp.ok || !contentType.includes('application/json')) {
         throw new Error('Failed to sync protected verification vault.');
       }
     }
@@ -453,11 +457,18 @@ export async function checkVerificationStep(
   greetingId: string,
   payload: { step: 'day' | 'month' | 'year' | 'custom'; value: unknown; questionId?: string }
 ): Promise<{ valid: boolean; locked?: boolean; remainingAttempts?: number; message?: string }> {
+  if (!hasApiBackend()) {
+    throw new Error('Verification backend is unavailable on this static host.');
+  }
   const resp = await fetch(buildApiUrl(`/greetings/${greetingId}/check-step`), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
+  const contentType = resp.headers.get('content-type') || '';
+  if (!contentType.includes('application/json')) {
+    throw new Error('Verification backend returned a non-JSON response.');
+  }
   return (await resp.json()) as { valid: boolean; locked?: boolean; remainingAttempts?: number; message?: string };
 }
 
@@ -483,11 +494,18 @@ export async function verifyFullGreeting(
     exportedVideo?: Greeting['exportedVideo'];
   };
 }> {
+  if (!hasApiBackend()) {
+    throw new Error('Verification backend is unavailable on this static host.');
+  }
   const resp = await fetch(buildApiUrl(`/greetings/${greetingId}/verify`), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
+  const contentType = resp.headers.get('content-type') || '';
+  if (!contentType.includes('application/json')) {
+    throw new Error('Verification backend returned a non-JSON response.');
+  }
   return (await resp.json()) as {
     verified: boolean;
     locked?: boolean;
