@@ -1,0 +1,86 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer base {
+  :root {
+    --font-display: 'Fraunces', Georgia, serif;
+    --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+    --font-serif-classic: 'Playfair Display', Georgia, serif;
+    --font-script: 'Caveat', cursive;
+  }
+
+  html {
+    font-family: var(--font-sans);
+    scroll-behavior: smooth;
+  }
+
+  h1, h2, .font-display {
+    font-family: var(--font-display);
+  }
+
+  .font-classic {
+    font-family: var(--font-serif-classic);
+  }
+
+  .font-script {
+    font-family: var(--font-script);
+  }
+
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@keyframes floatSlow {
+  0%, 100% { transform: translateY(0px) rotate(0deg); }
+  50% { transform: translateY(-10px) rotate(1.5deg); }
+}
+
+@keyframes gentlePulse {
+  0%, 100% { transform: scale(1); opacity: 0.95; }
+  50% { transform: scale(1.04); opacity: 1; }
+}
+
+@keyframes candleFlicker {
+  0%, 100% { transform: scaleY(1) scaleX(1) skewX(0deg); opacity: 1; }
+  25% { transform: scaleY(1.08) scaleX(0.95) skewX(2deg); opacity: 0.92; }
+  50% { transform: scaleY(0.96) scaleX(1.04) skewX(-2deg); opacity: 1; }
+  75% { transform: scaleY(1.05) scaleX(0.97) skewX(1deg); opacity: 0.95; }
+}
+
+@keyframes envelopeOpen {
+  0% { transform: rotateX(0deg); }
+  100% { transform: rotateX(180deg); }
+}
+
+@keyframes revealUp {
+  0% { opacity: 0; transform: translateY(16px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+.animate-float-slow {
+  animation: floatSlow 5s ease-in-out infinite;
+}
+
+.animate-candle-flicker {
+  animation: candleFlicker 1.4s ease-in-out infinite;
+  transform-origin: bottom center;
+}
+
+.animate-reveal-up {
+  animation: revealUp 0.55s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-float-slow,
+  .animate-candle-flicker,
+  .animate-reveal-up {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}

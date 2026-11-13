@@ -1,0 +1,225 @@
+{
+  "entities": {
+    "AdminUser": {
+      "title": "AdminUser",
+      "description": "Authorized platform administrator record.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "email": { "type": "string", "format": "email", "maxLength": 200 },
+        "displayName": { "type": "string", "maxLength": 120 },
+        "role": { "type": "string", "enum": ["super_admin", "moderator"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "role", "createdAt"]
+    },
+    "CreatorUser": {
+      "title": "CreatorUser",
+      "description": "Creator account metadata and usage counters.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "displayName": { "type": "string", "maxLength": 120 },
+        "photoURL": { "type": "string", "maxLength": 500 },
+        "isAnonymous": { "type": "boolean" },
+        "greetingsCount": { "type": "number" },
+        "storageUsedBytes": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "displayName", "greetingsCount", "storageUsedBytes", "createdAt", "updatedAt"]
+    },
+    "UserPrivateInfo": {
+      "title": "UserPrivateInfo",
+      "description": "Isolated PII for user accounts.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "email": { "type": "string", "format": "email", "maxLength": 200 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "updatedAt"]
+    },
+    "Category": {
+      "title": "Category",
+      "description": "Greeting occasion category managed by administrators.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "name": { "type": "string", "minLength": 2, "maxLength": 80 },
+        "slug": { "type": "string", "minLength": 2, "maxLength": 80, "pattern": "^[a-z0-9\\-]+$" },
+        "description": { "type": "string", "maxLength": 300 },
+        "imageUrl": { "type": "string", "maxLength": 1000 },
+        "accentColor": { "type": "string", "maxLength": 32 },
+        "sortOrder": { "type": "number" },
+        "enabled": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "slug", "description", "enabled", "sortOrder", "createdAt", "updatedAt"]
+    },
+    "Template": {
+      "title": "Template",
+      "description": "Pre-built interactive greeting design template.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "name": { "type": "string", "minLength": 2, "maxLength": 100 },
+        "categoryId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "description": { "type": "string", "maxLength": 400 },
+        "previewImageUrl": { "type": "string", "maxLength": 1000 },
+        "animationStyle": { "type": "string", "maxLength": 64 },
+        "colorScheme": { "type": "object" },
+        "fontPair": { "type": "string", "maxLength": 64 },
+        "backgroundStyle": { "type": "string", "maxLength": 200 },
+        "musicTrackId": { "type": "string", "maxLength": 128 },
+        "layoutPreset": { "type": "string", "maxLength": 64 },
+        "enabled": { "type": "boolean" },
+        "featured": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "categoryId", "description", "animationStyle", "enabled", "featured", "createdAt", "updatedAt"]
+    },
+    "MediaAsset": {
+      "title": "MediaAsset",
+      "description": "Admin-curated music, licensed imagery, and decorative asset.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "type": { "type": "string", "enum": ["music", "image", "sticker"] },
+        "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "url": { "type": "string", "maxLength": 1000 },
+        "license": { "type": "string", "maxLength": 120 },
+        "attribution": { "type": "string", "maxLength": 200 },
+        "category": { "type": "string", "maxLength": 80 },
+        "enabled": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "type", "title", "url", "license", "enabled", "createdAt", "updatedAt"]
+    },
+    "PlatformSettings": {
+      "title": "PlatformSettings",
+      "description": "Global platform configuration managed by administrator.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "siteName": { "type": "string", "minLength": 2, "maxLength": 80 },
+        "tagline": { "type": "string", "maxLength": 200 },
+        "heroTitle": { "type": "string", "maxLength": 160 },
+        "heroSubtitle": { "type": "string", "maxLength": 400 },
+        "defaultTheme": { "type": "string", "enum": ["light", "dark"] },
+        "maxPhotosPerCard": { "type": "number" },
+        "maxUploadSizeMb": { "type": "number" },
+        "allowGuestCreation": { "type": "boolean" },
+        "sharingEnabled": { "type": "boolean" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "siteName", "defaultTheme", "maxPhotosPerCard", "maxUploadSizeMb", "allowGuestCreation", "sharingEnabled", "updatedAt"]
+    },
+    "Greeting": {
+      "title": "Greeting",
+      "description": "Personalized interactive digital greeting card.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "creatorId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "categoryId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "templateId": { "type": "string", "maxLength": 128 },
+        "recipientName": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "senderName": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "title": { "type": "string", "minLength": 1, "maxLength": 140 },
+        "mainMessage": { "type": "string", "maxLength": 4000 },
+        "additionalMessages": { "type": "array" },
+        "cardDate": { "type": "string", "maxLength": 64 },
+        "signature": { "type": "string", "maxLength": 120 },
+        "designConfig": { "type": "object" },
+        "photos": { "type": "array" },
+        "musicConfig": { "type": "object" },
+        "animations": { "type": "array" },
+        "accessMode": { "type": "string", "enum": ["direct", "interactive"] },
+        "verificationMeta": { "type": "object" },
+        "status": { "type": "string", "enum": ["draft", "published", "unpublished"] },
+        "isReported": { "type": "boolean" },
+        "viewCount": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "creatorId", "categoryId", "recipientName", "senderName", "title", "mainMessage", "accessMode", "status", "createdAt", "updatedAt"]
+    },
+    "GreetingSecret": {
+      "title": "GreetingSecret",
+      "description": "Protected verification answers for interactive mode.",
+      "type": "object",
+      "properties": {
+        "greetingId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "creatorId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "birthDay": { "type": "number" },
+        "birthMonth": { "type": "number" },
+        "birthYear": { "type": "number" },
+        "customAnswers": { "type": "array" },
+        "unlockedPayload": { "type": "object" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["greetingId", "creatorId", "updatedAt"]
+    },
+    "ActivityLog": {
+      "title": "ActivityLog",
+      "description": "Security and platform audit log entry.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "actorId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "action": { "type": "string", "minLength": 2, "maxLength": 80 },
+        "targetType": { "type": "string", "maxLength": 64 },
+        "targetId": { "type": "string", "maxLength": 128 },
+        "details": { "type": "string", "maxLength": 400 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "actorId", "action", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/admins/{adminId}": {
+      "schema": { "$ref": "#/entities/AdminUser" },
+      "description": "Administrator allowlist and role records."
+    },
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/CreatorUser" },
+      "description": "Creator account metadata and usage limits."
+    },
+    "/users/{userId}/private/{docId}": {
+      "schema": { "$ref": "#/entities/UserPrivateInfo" },
+      "description": "Isolated user PII such as email addresses."
+    },
+    "/categories/{categoryId}": {
+      "schema": { "$ref": "#/entities/Category" },
+      "description": "Greeting categories managed by administrators."
+    },
+    "/templates/{templateId}": {
+      "schema": { "$ref": "#/entities/Template" },
+      "description": "Curated greeting card templates."
+    },
+    "/mediaLibrary/{mediaId}": {
+      "schema": { "$ref": "#/entities/MediaAsset" },
+      "description": "Platform licensed music, stock assets, and stickers."
+    },
+    "/platformSettings/{settingId}": {
+      "schema": { "$ref": "#/entities/PlatformSettings" },
+      "description": "Platform-wide configuration document."
+    },
+    "/greetings/{greetingId}": {
+      "schema": { "$ref": "#/entities/Greeting" },
+      "description": "User-created greeting cards (drafts and published)."
+    },
+    "/greetings/{greetingId}/secrets/{secretId}": {
+      "schema": { "$ref": "#/entities/GreetingSecret" },
+      "description": "Creator-only protected verification answers."
+    },
+    "/activityLogs/{logId}": {
+      "schema": { "$ref": "#/entities/ActivityLog" },
+      "description": "Immutable platform activity and security logs."
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "Keepsake",
+  "description": "Personalized interactive digital greeting cards and cinematic gift experiences platform.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

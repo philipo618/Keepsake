@@ -1,0 +1,342 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Core primitives
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        (
+          request.auth.token.email == 'philipodickson96@gmail.com' &&
+          request.auth.token.email_verified == true
+        )
+      );
+    }
+
+    // Validation helpers
+    function isValidAdmin(data) {
+      return data.keys().hasAll(['uid', 'email', 'role', 'createdAt']) &&
+        data.keys().hasOnly(['uid', 'email', 'displayName', 'role', 'createdAt']) &&
+        isValidId(data.uid) &&
+        data.email is string && data.email.size() >= 3 && data.email.size() <= 200 &&
+        data.role in ['super_admin', 'moderator'] &&
+        (!('displayName' in data) || (data.displayName is string && data.displayName.size() <= 120));
+    }
+
+    function isValidCreatorUser(data) {
+      return data.keys().hasAll(['uid', 'displayName', 'greetingsCount', 'storageUsedBytes', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['uid', 'displayName', 'photoURL', 'isAnonymous', 'greetingsCount', 'storageUsedBytes', 'createdAt', 'updatedAt']) &&
+        isValidId(data.uid) &&
+        data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 120 &&
+        (!('photoURL' in data) || (data.photoURL is string && data.photoURL.size() <= 500)) &&
+        (!('isAnonymous' in data) || data.isAnonymous is bool) &&
+        data.greetingsCount is number && data.greetingsCount >= 0 && data.greetingsCount <= 1000 &&
+        data.storageUsedBytes is number && data.storageUsedBytes >= 0 && data.storageUsedBytes <= 524288000;
+    }
+
+    function isValidUserPrivate(data) {
+      return data.keys().hasAll(['uid', 'updatedAt']) &&
+        data.keys().hasOnly(['uid', 'email', 'updatedAt']) &&
+        isValidId(data.uid) &&
+        (!('email' in data) || (data.email is string && data.email.size() <= 200));
+    }
+
+    function isValidCategory(data) {
+      return data.keys().hasAll(['id', 'name', 'slug', 'description', 'enabled', 'sortOrder', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['id', 'name', 'slug', 'description', 'imageUrl', 'accentColor', 'sortOrder', 'enabled', 'createdAt', 'updatedAt']) &&
+        isValidId(data.id) &&
+        data.name is string && data.name.size() >= 2 && data.name.size() <= 80 &&
+        data.slug is string && data.slug.size() >= 2 && data.slug.size() <= 80 &&
+        data.description is string && data.description.size() <= 300 &&
+        (!('imageUrl' in data) || (data.imageUrl is string && data.imageUrl.size() <= 1000)) &&
+        (!('accentColor' in data) || (data.accentColor is string && data.accentColor.size() <= 32)) &&
+        data.sortOrder is number &&
+        data.enabled is bool;
+    }
+
+    function isValidTemplate(data) {
+      return data.keys().hasAll(['id', 'name', 'categoryId', 'description', 'animationStyle', 'enabled', 'featured', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['id', 'name', 'categoryId', 'description', 'previewImageUrl', 'animationStyle', 'colorScheme', 'fontPair', 'backgroundStyle', 'musicTrackId', 'layoutPreset', 'enabled', 'featured', 'createdAt', 'updatedAt']) &&
+        isValidId(data.id) &&
+        isValidId(data.categoryId) &&
+        data.name is string && data.name.size() >= 2 && data.name.size() <= 100 &&
+        data.description is string && data.description.size() <= 400 &&
+        (!('previewImageUrl' in data) || (data.previewImageUrl is string && data.previewImageUrl.size() <= 1000)) &&
+        data.animationStyle is string && data.animationStyle.size() <= 64 &&
+        (!('colorScheme' in data) || data.colorScheme is map) &&
+        (!('fontPair' in data) || (data.fontPair is string && data.fontPair.size() <= 64)) &&
+        (!('backgroundStyle' in data) || (data.backgroundStyle is string && data.backgroundStyle.size() <= 200)) &&
+        (!('musicTrackId' in data) || (data.musicTrackId is string && data.musicTrackId.size() <= 128)) &&
+        (!('layoutPreset' in data) || (data.layoutPreset is string && data.layoutPreset.size() <= 64)) &&
+        data.enabled is bool &&
+        data.featured is bool;
+    }
+
+    function isValidMediaAsset(data) {
+      return data.keys().hasAll(['id', 'type', 'title', 'url', 'license', 'enabled', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['id', 'type', 'title', 'url', 'license', 'attribution', 'category', 'enabled', 'createdAt', 'updatedAt']) &&
+        isValidId(data.id) &&
+        data.type in ['music', 'image', 'sticker'] &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 120 &&
+        data.url is string && data.url.size() <= 1000 &&
+        data.license is string && data.license.size() <= 120 &&
+        (!('attribution' in data) || (data.attribution is string && data.attribution.size() <= 200)) &&
+        (!('category' in data) || (data.category is string && data.category.size() <= 80)) &&
+        data.enabled is bool;
+    }
+
+    function isValidPlatformSettings(data) {
+      return data.keys().hasAll(['id', 'siteName', 'defaultTheme', 'maxPhotosPerCard', 'maxUploadSizeMb', 'allowGuestCreation', 'sharingEnabled', 'updatedAt']) &&
+        data.keys().hasOnly(['id', 'siteName', 'tagline', 'heroTitle', 'heroSubtitle', 'defaultTheme', 'maxPhotosPerCard', 'maxUploadSizeMb', 'allowGuestCreation', 'sharingEnabled', 'updatedAt']) &&
+        data.id is string && data.id.size() >= 1 && data.id.size() <= 64 &&
+        data.siteName is string && data.siteName.size() >= 2 && data.siteName.size() <= 80 &&
+        (!('tagline' in data) || (data.tagline is string && data.tagline.size() <= 200)) &&
+        (!('heroTitle' in data) || (data.heroTitle is string && data.heroTitle.size() <= 160)) &&
+        (!('heroSubtitle' in data) || (data.heroSubtitle is string && data.heroSubtitle.size() <= 400)) &&
+        data.defaultTheme in ['light', 'dark'] &&
+        data.maxPhotosPerCard is number && data.maxPhotosPerCard >= 1 && data.maxPhotosPerCard <= 20 &&
+        data.maxUploadSizeMb is number && data.maxUploadSizeMb >= 1 && data.maxUploadSizeMb <= 25 &&
+        data.allowGuestCreation is bool &&
+        data.sharingEnabled is bool;
+    }
+
+    function isValidGreeting(data) {
+      return data.keys().hasAll(['id', 'creatorId', 'categoryId', 'recipientName', 'senderName', 'title', 'mainMessage', 'accessMode', 'status', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['id', 'creatorId', 'categoryId', 'templateId', 'recipientName', 'senderName', 'title', 'mainMessage', 'additionalMessages', 'cardDate', 'signature', 'designConfig', 'photos', 'musicConfig', 'animations', 'accessMode', 'verificationMeta', 'status', 'isReported', 'viewCount', 'createdAt', 'updatedAt']) &&
+        isValidId(data.id) &&
+        isValidId(data.creatorId) &&
+        isValidId(data.categoryId) &&
+        (!('templateId' in data) || (data.templateId is string && data.templateId.size() <= 128)) &&
+        data.recipientName is string && data.recipientName.size() >= 1 && data.recipientName.size() <= 100 &&
+        data.senderName is string && data.senderName.size() >= 1 && data.senderName.size() <= 100 &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 140 &&
+        data.mainMessage is string && data.mainMessage.size() <= 4000 &&
+        (!('additionalMessages' in data) || (data.additionalMessages is list && data.additionalMessages.size() <= 10 && (data.additionalMessages.size() == 0 || data.additionalMessages[0] is string))) &&
+        (!('cardDate' in data) || (data.cardDate is string && data.cardDate.size() <= 64)) &&
+        (!('signature' in data) || (data.signature is string && data.signature.size() <= 120)) &&
+        (!('designConfig' in data) || data.designConfig is map) &&
+        (!('photos' in data) || (data.photos is list && data.photos.size() <= 12 && (data.photos.size() == 0 || data.photos[0] is map))) &&
+        (!('musicConfig' in data) || data.musicConfig is map) &&
+        (!('animations' in data) || (data.animations is list && data.animations.size() <= 12 && (data.animations.size() == 0 || data.animations[0] is string))) &&
+        data.accessMode in ['direct', 'interactive'] &&
+        (!('verificationMeta' in data) || data.verificationMeta is map) &&
+        data.status in ['draft', 'published', 'unpublished'] &&
+        (!('isReported' in data) || data.isReported is bool) &&
+        (!('viewCount' in data) || (data.viewCount is number && data.viewCount >= 0));
+    }
+
+    function isValidGreetingSecret(data) {
+      return data.keys().hasAll(['greetingId', 'creatorId', 'updatedAt']) &&
+        data.keys().hasOnly(['greetingId', 'creatorId', 'birthDay', 'birthMonth', 'birthYear', 'customAnswers', 'unlockedPayload', 'updatedAt']) &&
+        isValidId(data.greetingId) &&
+        isValidId(data.creatorId) &&
+        (!('birthDay' in data) || (data.birthDay is number && data.birthDay >= 1 && data.birthDay <= 31)) &&
+        (!('birthMonth' in data) || (data.birthMonth is number && data.birthMonth >= 1 && data.birthMonth <= 12)) &&
+        (!('birthYear' in data) || (data.birthYear is number && data.birthYear >= 1900 && data.birthYear <= 2100)) &&
+        (!('customAnswers' in data) || (data.customAnswers is list && data.customAnswers.size() <= 10 && (data.customAnswers.size() == 0 || data.customAnswers[0] is map))) &&
+        (!('unlockedPayload' in data) || data.unlockedPayload is map);
+    }
+
+    function isValidActivityLog(data) {
+      return data.keys().hasAll(['id', 'actorId', 'action', 'createdAt']) &&
+        data.keys().hasOnly(['id', 'actorId', 'action', 'targetType', 'targetId', 'details', 'createdAt']) &&
+        isValidId(data.id) &&
+        data.actorId is string && data.actorId.size() >= 1 && data.actorId.size() <= 128 &&
+        data.action is string && data.action.size() >= 2 && data.action.size() <= 80 &&
+        (!('targetType' in data) || (data.targetType is string && data.targetType.size() <= 64)) &&
+        (!('targetId' in data) || (data.targetId is string && data.targetId.size() <= 128)) &&
+        (!('details' in data) || (data.details is string && data.details.size() <= 400));
+    }
+
+    // Collection rules
+    match /admins/{adminId} {
+      allow get: if isValidId(adminId) && (isOwner(adminId) || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isValidId(adminId) && isAdmin() && isValidAdmin(incoming()) &&
+        incoming().createdAt == request.time;
+      allow update: if isValidId(adminId) && isAdmin() && isValidAdmin(incoming()) &&
+        incoming().createdAt == existing().createdAt;
+      allow delete: if isValidId(adminId) && isAdmin();
+    }
+
+    match /users/{userId} {
+      allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isValidId(userId) && isOwner(userId) &&
+        isValidCreatorUser(incoming()) &&
+        incoming().uid == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(userId) && isValidCreatorUser(incoming()) && (
+        isAdmin() || (
+          isOwner(userId) &&
+          incoming().uid == existing().uid &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().updatedAt == request.time &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL', 'greetingsCount', 'storageUsedBytes', 'updatedAt'])
+        )
+      );
+      allow delete: if isValidId(userId) && isAdmin();
+
+      match /private/{docId} {
+        allow get, list: if isOwner(userId) || isAdmin();
+        allow create: if isValidId(docId) && isOwner(userId) &&
+          isValidUserPrivate(incoming()) &&
+          incoming().uid == request.auth.uid &&
+          incoming().updatedAt == request.time;
+        allow update: if isValidId(docId) && isOwner(userId) &&
+          isValidUserPrivate(incoming()) &&
+          incoming().uid == existing().uid &&
+          incoming().updatedAt == request.time &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['email', 'updatedAt']);
+        allow delete: if isValidId(docId) && isAdmin();
+      }
+    }
+
+    match /categories/{categoryId} {
+      allow get: if isValidId(categoryId) && (existing().enabled == true || isAdmin());
+      allow list: if resource.data.enabled == true || isAdmin();
+      allow create: if isValidId(categoryId) && isAdmin() && isValidCategory(incoming()) &&
+        incoming().id == categoryId &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(categoryId) && isAdmin() && isValidCategory(incoming()) &&
+        incoming().id == existing().id &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time;
+      allow delete: if isValidId(categoryId) && isAdmin();
+    }
+
+    match /templates/{templateId} {
+      allow get: if isValidId(templateId) && (existing().enabled == true || isAdmin());
+      allow list: if resource.data.enabled == true || isAdmin();
+      allow create: if isValidId(templateId) && isAdmin() && isValidTemplate(incoming()) &&
+        incoming().id == templateId &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(templateId) && isAdmin() && isValidTemplate(incoming()) &&
+        incoming().id == existing().id &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time;
+      allow delete: if isValidId(templateId) && isAdmin();
+    }
+
+    match /mediaLibrary/{mediaId} {
+      allow get: if isValidId(mediaId) && (existing().enabled == true || isAdmin());
+      allow list: if resource.data.enabled == true || isAdmin();
+      allow create: if isValidId(mediaId) && isAdmin() && isValidMediaAsset(incoming()) &&
+        incoming().id == mediaId &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(mediaId) && isAdmin() && isValidMediaAsset(incoming()) &&
+        incoming().id == existing().id &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time;
+      allow delete: if isValidId(mediaId) && isAdmin();
+    }
+
+    match /platformSettings/{settingId} {
+      allow get: if isValidId(settingId);
+      allow list: if isAdmin();
+      allow create, update: if isValidId(settingId) && isAdmin() && isValidPlatformSettings(incoming()) &&
+        incoming().updatedAt == request.time;
+      allow delete: if false;
+    }
+
+    match /greetings/{greetingId} {
+      allow get: if isValidId(greetingId) && (
+        existing().status == 'published' ||
+        (isSignedIn() && existing().creatorId == request.auth.uid) ||
+        isAdmin()
+      );
+      allow list: if isAdmin() || (isSignedIn() && resource.data.creatorId == request.auth.uid);
+      allow create: if isSignedIn() && isValidId(greetingId) && isValidGreeting(incoming()) &&
+        incoming().id == greetingId &&
+        incoming().creatorId == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isSignedIn() && isValidId(greetingId) && isValidGreeting(incoming()) && (
+        isAdmin() || (
+          existing().creatorId == request.auth.uid &&
+          incoming().id == existing().id &&
+          incoming().creatorId == existing().creatorId &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().updatedAt == request.time &&
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'categoryId', 'templateId', 'recipientName', 'senderName', 'title',
+            'mainMessage', 'additionalMessages', 'cardDate', 'signature',
+            'designConfig', 'photos', 'musicConfig', 'animations', 'accessMode',
+            'verificationMeta', 'status', 'updatedAt'
+          ])
+        )
+      );
+      allow delete: if isValidId(greetingId) && (
+        isAdmin() ||
+        (isSignedIn() && existing().creatorId == request.auth.uid && existing().status == 'draft')
+      );
+
+      match /secrets/{secretId} {
+        allow get, list: if isAdmin() || (
+          isSignedIn() &&
+          get(/databases/$(database)/documents/greetings/$(greetingId)).data.creatorId == request.auth.uid
+        );
+        allow create: if isSignedIn() && isValidId(secretId) && isValidGreetingSecret(incoming()) &&
+          incoming().greetingId == greetingId &&
+          incoming().creatorId == request.auth.uid &&
+          incoming().updatedAt == request.time &&
+          get(/databases/$(database)/documents/greetings/$(greetingId)).data.creatorId == request.auth.uid;
+        allow update: if isSignedIn() && isValidId(secretId) && isValidGreetingSecret(incoming()) && (
+          isAdmin() || (
+            existing().creatorId == request.auth.uid &&
+            incoming().greetingId == existing().greetingId &&
+            incoming().creatorId == existing().creatorId &&
+            incoming().updatedAt == request.time &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['birthDay', 'birthMonth', 'birthYear', 'customAnswers', 'unlockedPayload', 'updatedAt'])
+          )
+        );
+        allow delete: if isValidId(secretId) && (
+          isAdmin() || (
+            isSignedIn() &&
+            get(/databases/$(database)/documents/greetings/$(greetingId)).data.creatorId == request.auth.uid
+          )
+        );
+      }
+    }
+
+    match /activityLogs/{logId} {
+      allow get, list: if isAdmin();
+      allow create: if isSignedIn() && isValidId(logId) && isValidActivityLog(incoming()) &&
+        incoming().id == logId &&
+        incoming().actorId == request.auth.uid &&
+        incoming().createdAt == request.time;
+      allow update: if false;
+      allow delete: if isValidId(logId) && isAdmin();
+    }
+  }
+}
