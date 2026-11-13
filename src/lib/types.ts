@@ -19,7 +19,38 @@ export type AnimationEffectId =
   | 'card-3d-open';
 
 export type PhotoSourceType = 'uploaded' | 'licensed-stock' | 'external-url';
-export type PhotoTransitionType = 'fade' | 'slide' | 'zoom' | 'polaroid-float';
+export type PhotoTransitionType =
+  | 'fade'
+  | 'slide-left'
+  | 'slide-right'
+  | 'slide-up'
+  | 'slide-down'
+  | 'zoom-in'
+  | 'zoom-out'
+  | 'ken-burns'
+  | 'flip-3d'
+  | 'card-reveal-3d'
+  | 'crossfade'
+  | 'blur-reveal'
+  | 'circular-reveal'
+  | 'rotate-reveal'
+  | 'dissolve'
+  | 'polaroid-reveal'
+  | 'stacked-photo'
+  | 'filmstrip'
+  | 'parallax'
+  | 'soft-light'
+  | 'split-screen'
+  | 'film-burn'
+  | 'light-sweep'
+  | 'geometric-reveal'
+  | 'layered-reveal'
+  | 'camera-pan'
+  // Legacy aliases retained for existing saved Firestore cards
+  | 'slide'
+  | 'zoom'
+  | 'polaroid-float';
+
 export type PhotoLayoutType = 'slideshow' | 'gallery' | 'floating-frames' | 'polaroid-stack';
 export type PresentationMode = 'interactive-card' | 'fullscreen-slideshow' | 'cinematic-story';
 export type ExperienceStepKey =
@@ -29,6 +60,105 @@ export type ExperienceStepKey =
   | 'main-message'
   | 'extra-notes'
   | 'closing-signature';
+
+export type SlideshowStyleId =
+  | 'cinematic-memories'
+  | 'romantic-memories'
+  | 'birthday-celebration'
+  | 'elegant-gallery'
+  | 'film-memories'
+  | 'modern-dynamic'
+  | 'photo-album'
+  | 'luxury-presentation'
+  | 'emotional-storytelling'
+  | 'classic-slideshow';
+
+export type PhotoPresentationLayout =
+  | 'fullscreen'
+  | 'framed'
+  | 'polaroid'
+  | 'two-photo'
+  | 'collage'
+  | 'stacked'
+  | 'side-by-side'
+  | 'filmstrip'
+  | 'animated-card';
+
+export type TextAnimationStyle =
+  | 'fade-in'
+  | 'typewriter'
+  | 'smooth-slide'
+  | 'zoom-reveal'
+  | 'handwriting'
+  | 'floating'
+  | 'letter-by-letter'
+  | 'cinematic-title'
+  | 'glow-reveal'
+  | 'soft-blur';
+
+export type VideoAspectRatio = '16:9' | '9:16' | '1:1';
+export type VideoResolution = '480p' | '720p' | '1080p';
+export type VideoFrameRate = 24 | 30;
+export type VideoQuality = 'standard' | 'high' | 'ultra';
+export type VideoExportFormat = 'mp4' | 'webm';
+
+export interface VideoStudioConfig {
+  aspectRatio: VideoAspectRatio;
+  resolution: VideoResolution;
+  fps: VideoFrameRate;
+  quality: VideoQuality;
+  format: VideoExportFormat;
+  slideshowStyle: SlideshowStyleId;
+  photoPresentation: PhotoPresentationLayout;
+  slideDurationSec: number;
+  customTotalDurationSec?: number | null;
+  photoFrame: {
+    blurBackdrop: boolean;
+    borderStyle: 'none' | 'thin' | 'double' | 'gold' | 'polaroid';
+    shadowIntensity: 'none' | 'soft' | 'dramatic';
+    borderRadius: number;
+    spacing: number;
+    backgroundColorOverride?: string;
+  };
+  textStyle: {
+    animation: TextAnimationStyle;
+    animDurationMs: number;
+    displayDurationSec: number;
+    fontSizeScale: 'compact' | 'standard' | 'large';
+    color?: string;
+    align: 'left' | 'center';
+    position: 'top' | 'center' | 'bottom';
+  };
+  openingScene: {
+    enabled: boolean;
+    title: string;
+    subtitle: string;
+    durationSec: number;
+    showIntroPhoto: boolean;
+  };
+  closingScene: {
+    enabled: boolean;
+    title: string;
+    message: string;
+    signature: string;
+    durationSec: number;
+  };
+  audioOptions: {
+    fadeInSec: number;
+    fadeOutSec: number;
+  };
+}
+
+export interface ExportedVideoAttachment {
+  url: string;
+  format: VideoExportFormat;
+  fileName: string;
+  durationSec: number;
+  width: number;
+  height: number;
+  sizeBytes: number;
+  attachedAt: string;
+}
 
 export interface Category {
   id: string;
@@ -147,9 +277,13 @@ export interface DesignConfig {
   textPosition: 'top' | 'center' | 'bottom';
   photoLayout: PhotoLayoutType;
   presentationMode: PresentationMode;
+  defaultPhotoTransition?: PhotoTransitionType;
+  transitionDurationMs?: number;
+  slideshowIntervalMs?: number;
   stickers: StickerPlacement[];
   sequenceOrder: ExperienceStepKey[];
   animationIntensity: 'gentle' | 'balanced' | 'festive';
+  videoConfig?: VideoStudioConfig;
 }
 
 export interface CustomQuestionPrompt {
@@ -194,6 +328,7 @@ export interface Greeting {
   accessMode: 'direct' | 'interactive';
   verificationMeta: VerificationMeta;
   status: 'draft' | 'published' | 'unpublished';
+  exportedVideo?: ExportedVideoAttachment | null;
   isReported?: boolean;
   viewCount?: number;
   createdAt?: unknown;

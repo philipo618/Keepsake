@@ -5,7 +5,7 @@ import { useApp } from './AppContext';
 export type AppRoute =
   | { page: 'landing' }
   | { page: 'explore' }
-  | { page: 'create'; editId?: string; templateId?: string; categoryId?: string }
+  | { page: 'create'; editId?: string; templateId?: string; categoryId?: string; openVideoStudio?: boolean }
   | { page: 'dashboard' }
   | { page: 'admin' }
   | { page: 'greeting'; id: string };

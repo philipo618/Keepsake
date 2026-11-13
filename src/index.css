@@ -75,10 +75,236 @@
 @media (prefers-reduced-motion: reduce) {
   .animate-float-slow,
   .animate-candle-flicker,
-  .animate-reveal-up {
+  .animate-reveal-up,
+  [class*="photo-tx-"] {
     animation: none !important;
     transition: none !important;
   }
+}
+
+/* ============================================================================
+   20 GPU-friendly Photo Preview & Slideshow Transitions
+   ============================================================================ */
+.photo-tx-stage {
+  perspective: 1100px;
+}
+
+@keyframes photoFade {
+  0% { opacity: 0; }
+  100% { opacity: 1; }
+}
+@keyframes photoSlideLeft {
+  0% { opacity: 0; transform: translate3d(14%, 0, 0); }
+  100% { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+@keyframes photoSlideRight {
+  0% { opacity: 0; transform: translate3d(-14%, 0, 0); }
+  100% { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+@keyframes photoSlideUp {
+  0% { opacity: 0; transform: translate3d(0, 14%, 0); }
+  100% { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+@keyframes photoSlideDown {
+  0% { opacity: 0; transform: translate3d(0, -14%, 0); }
+  100% { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+@keyframes photoZoomIn {
+  0% { opacity: 0; transform: scale(0.88); }
+  100% { opacity: 1; transform: scale(1); }
+}
+@keyframes photoZoomOut {
+  0% { opacity: 0; transform: scale(1.14); }
+  100% { opacity: 1; transform: scale(1); }
+}
+@keyframes photoKenBurns {
+  0% { opacity: 0.35; transform: scale(1) translate3d(0%, 0%, 0); }
+  20% { opacity: 1; }
+  100% { opacity: 1; transform: scale(1.1) translate3d(-2%, -1.5%, 0); }
+}
+@keyframes photoFlip3D {
+  0% { opacity: 0; transform: rotateY(-72deg) scale(0.94); }
+  100% { opacity: 1; transform: rotateY(0deg) scale(1); }
+}
+@keyframes photoCardReveal3D {
+  0% { opacity: 0; transform: rotateX(22deg) translate3d(0, 18px, -40px) scale(0.94); }
+  100% { opacity: 1; transform: rotateX(0deg) translate3d(0, 0, 0) scale(1); }
+}
+@keyframes photoCrossfade {
+  0% { opacity: 0; }
+  100% { opacity: 1; }
+}
+@keyframes photoBlurReveal {
+  0% { opacity: 0; filter: blur(14px); transform: scale(1.03); }
+  100% { opacity: 1; filter: blur(0px); transform: scale(1); }
+}
+@keyframes photoCircularReveal {
+  0% { opacity: 0.4; clip-path: circle(8% at 50% 50%); }
+  100% { opacity: 1; clip-path: circle(85% at 50% 50%); }
+}
+@keyframes photoRotateReveal {
+  0% { opacity: 0; transform: rotate(-5deg) scale(0.92); }
+  100% { opacity: 1; transform: rotate(0deg) scale(1); }
+}
+@keyframes photoDissolve {
+  0% { opacity: 0; filter: brightness(1.18) saturate(0.8); transform: scale(1.02); }
+  100% { opacity: 1; filter: brightness(1) saturate(1); transform: scale(1); }
+}
+@keyframes photoPolaroidReveal {
+  0% { opacity: 0; transform: translate3d(0, 16px, 0) rotate(-3.5deg) scale(0.95); filter: contrast(0.85) brightness(1.1); }
+  65% { opacity: 1; transform: translate3d(0, -2px, 0) rotate(1deg) scale(1.01); }
+  100% { opacity: 1; transform: translate3d(0, 0, 0) rotate(0deg) scale(1); filter: contrast(1) brightness(1); }
+}
+@keyframes photoStacked {
+  0% { opacity: 0; transform: translate3d(18px, 12px, 0) rotate(3deg) scale(0.92); }
+  100% { opacity: 1; transform: translate3d(0, 0, 0) rotate(0deg) scale(1); }
+}
+@keyframes photoFilmstrip {
+  0% { opacity: 0.25; transform: translate3d(26%, 0, 0) scaleY(0.95); filter: contrast(1.08); }
+  50% { opacity: 0.9; transform: translate3d(-2%, 0, 0) scaleY(0.99); }
+  100% { opacity: 1; transform: translate3d(0, 0, 0) scaleY(1); filter: contrast(1); }
+}
+@keyframes photoParallax {
+  0% { opacity: 0; transform: translate3d(-6%, 2%, 0) scale(1.08); }
+  100% { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+}
+@keyframes photoSoftLight {
+  0% { opacity: 0; filter: brightness(1.35) contrast(0.92); }
+  55% { opacity: 1; filter: brightness(1.12) contrast(0.98); }
+  100% { opacity: 1; filter: brightness(1) contrast(1); }
+}
+@keyframes softLightSweep {
+  0% { transform: translate3d(-120%, 0, 0) skewX(-18deg); opacity: 0; }
+  40% { opacity: 0.55; }
+  100% { transform: translate3d(140%, 0, 0) skewX(-18deg); opacity: 0; }
+}
+
+.photo-tx-fade {
+  animation: photoFade var(--photo-tx-duration, 750ms) cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.photo-tx-slide-left {
+  animation: photoSlideLeft var(--photo-tx-duration, 750ms) cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.photo-tx-slide-right {
+  animation: photoSlideRight var(--photo-tx-duration, 750ms) cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.photo-tx-slide-up {
+  animation: photoSlideUp var(--photo-tx-duration, 750ms) cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.photo-tx-slide-down {
+  animation: photoSlideDown var(--photo-tx-duration, 750ms) cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.photo-tx-zoom-in {
+  animation: photoZoomIn var(--photo-tx-duration, 750ms) cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.photo-tx-zoom-out {
+  animation: photoZoomOut var(--photo-tx-duration, 750ms) cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.photo-tx-ken-burns {
+  animation: photoKenBurns calc(var(--photo-tx-duration, 750ms) * 4.5) ease-out both;
+}
+.photo-tx-flip-3d {
+  backface-visibility: hidden;
+  transform-style: preserve-3d;
+  animation: photoFlip3D var(--photo-tx-duration, 750ms) cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.photo-tx-card-reveal-3d {
+  backface-visibility: hidden;
+  transform-style: preserve-3d;
+  animation: photoCardReveal3D var(--photo-tx-duration, 750ms) cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.photo-tx-crossfade {
+  animation: photoCrossfade var(--photo-tx-duration, 750ms) ease-in-out both;
+}
+.photo-tx-blur-reveal {
+  animation: photoBlurReveal var(--photo-tx-duration, 750ms) cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.photo-tx-circular-reveal {
+  animation: photoCircularReveal var(--photo-tx-duration, 750ms) cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.photo-tx-rotate-reveal {
+  animation: photoRotateReveal var(--photo-tx-duration, 750ms) cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.photo-tx-dissolve {
+  animation: photoDissolve var(--photo-tx-duration, 750ms) ease-out both;
+}
+.photo-tx-polaroid-reveal {
+  animation: photoPolaroidReveal var(--photo-tx-duration, 750ms) cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.photo-tx-stacked-photo {
+  animation: photoStacked var(--photo-tx-duration, 750ms) cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.photo-tx-filmstrip {
+  animation: photoFilmstrip var(--photo-tx-duration, 750ms) cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.photo-tx-parallax {
+  animation: photoParallax calc(var(--photo-tx-duration, 750ms) * 1.4) cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.photo-tx-soft-light {
+  position: relative;
+  animation: photoSoftLight var(--photo-tx-duration, 750ms) ease-out both;
+}
+.photo-tx-soft-light::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.45), transparent);
+  animation: softLightSweep var(--photo-tx-duration, 750ms) ease-out both;
+}
+
+@keyframes photoSplitScreen {
+  0% { opacity: 0.35; clip-path: inset(0 50% 0 50%); }
+  100% { opacity: 1; clip-path: inset(0 0% 0 0%); }
+}
+@keyframes photoFilmBurn {
+  0% { opacity: 0.25; filter: brightness(1.65) sepia(0.75) contrast(1.15); transform: scale(1.04); }
+  50% { opacity: 0.9; filter: brightness(1.25) sepia(0.35); }
+  100% { opacity: 1; filter: brightness(1) sepia(0) contrast(1); transform: scale(1); }
+}
+@keyframes photoLightSweep {
+  0% { opacity: 0; transform: translate3d(-4%, 0, 0) scale(1.03); }
+  100% { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+}
+@keyframes photoGeometricReveal {
+  0% { opacity: 0.3; clip-path: polygon(50% 50%, 50% 50%, 50% 50%, 50% 50%); }
+  100% { opacity: 1; clip-path: polygon(50% -20%, 120% 50%, 50% 120%, -20% 50%); }
+}
+@keyframes photoLayeredReveal {
+  0% { opacity: 0; transform: translate3d(-12px, 14px, 0) scale(0.92); }
+  100% { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+}
+@keyframes photoCameraPan {
+  0% { opacity: 0.4; transform: scale(1.09) translate3d(3%, 0, 0); }
+  100% { opacity: 1; transform: scale(1.02) translate3d(-3%, 0, 0); }
+}
+
+.photo-tx-split-screen {
+  animation: photoSplitScreen var(--photo-tx-duration, 750ms) cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.photo-tx-film-burn {
+  animation: photoFilmBurn var(--photo-tx-duration, 750ms) ease-out both;
+}
+.photo-tx-light-sweep {
+  position: relative;
+  animation: photoLightSweep var(--photo-tx-duration, 750ms) ease-out both;
+}
+.photo-tx-light-sweep::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(105deg, transparent 20%, rgba(255, 240, 200, 0.6) 50%, transparent 80%);
+  animation: softLightSweep var(--photo-tx-duration, 750ms) ease-out both;
+}
+.photo-tx-geometric-reveal {
+  animation: photoGeometricReveal var(--photo-tx-duration, 750ms) cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.photo-tx-layered-reveal {
+  animation: photoLayeredReveal var(--photo-tx-duration, 750ms) cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.photo-tx-camera-pan {
+  animation: photoCameraPan calc(var(--photo-tx-duration, 750ms) * 3.5) ease-in-out both;
 }
 
 .pb-safe {

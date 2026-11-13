@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { ArrowUp, ImagePlus, Search, Star, Trash2, Upload } from 'lucide-react';
+import { ArrowUp, ImagePlus, Play, Search, Sparkles, Star, Trash2, Upload } from 'lucide-react';
 import { searchLicensedStockPhotos, uploadMediaFile, type StockPhotoResult } from '../lib/imageUtils';
 import { STUDIO_ASSETS } from '../lib/assets';
+import { PHOTO_TRANSITIONS, resolvePhotoTransition } from '../lib/catalog';
 import { useApp } from './AppContext';
 import type { PhotoItem, PhotoTransitionType } from '../lib/types';
 
@@ -9,12 +10,24 @@ export function PhotoManagerPanel({
   greetingId,
   photos,
   maxPhotos,
+  defaultTransition = 'fade',
+  transitionDurationMs = 750,
+  slideshowIntervalMs = 4500,
   onChange,
+  onTransitionSettingsChange,
 }: {
   greetingId: string;
   photos: PhotoItem[];
   maxPhotos: number;
+  defaultTransition?: PhotoTransitionType;
+  transitionDurationMs?: number;
+  slideshowIntervalMs?: number;
   onChange: (next: PhotoItem[]) => void;
+  onTransitionSettingsChange?: (patch: {
+    defaultPhotoTransition?: PhotoTransitionType;
+    transitionDurationMs?: number;
+    slideshowIntervalMs?: number;
+  }) => void;
 }) {
   const { user, promptAuth } = useApp();
   const [sourceTab, setSourceTab] = useState<'upload' | 'stock' | 'studio' | 'url'>('upload');
@@ -33,6 +46,12 @@ export function PhotoManagerPanel({
 
   // Crop / Position modal state
   const [editingPhotoId, setEditingPhotoId] = useState<string | null>(null);
+
+  // Live transition preview state
+  const [txPreviewKey, setTxPreviewKey] = useState(0);
+  const [txPreviewIndex, setTxPreviewIndex] = useState(0);
+
+  const normalizedDefaultTx = resolvePhotoTransition(defaultTransition);
 
   const handleFileUpload = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
@@ -57,7 +76,7 @@ export function PhotoManagerPanel({
           sourceType: 'uploaded',
           isCover: photos.length === 0 && added.length === 0,
           cropPosition: { x: 50, y: 50, zoom: 1 },
-          transition: 'fade',
+          transition: normalizedDefaultTx,
         });
       }
       onChange([...photos, ...added]);
@@ -99,7 +118,7 @@ export function PhotoManagerPanel({
         attribution: item.attribution,
         isCover: photos.length === 0,
         cropPosition: { x: 50, y: 50, zoom: 1 },
-        transition: 'fade',
+        transition: normalizedDefaultTx,
       },
     ]);
   };
@@ -117,7 +136,7 @@ export function PhotoManagerPanel({
         attribution: 'Keepsake Studio',
         isCover: photos.length === 0,
         cropPosition: { x: 50, y: 50, zoom: 1 },
-        transition: 'fade',
+        transition: normalizedDefaultTx,
       },
     ]);
   };
@@ -135,7 +154,7 @@ export function PhotoManagerPanel({
         license: 'External Link (User Provided)',
         isCover: photos.length === 0,
         cropPosition: { x: 50, y: 50, zoom: 1 },
-        transition: 'fade',
+        transition: normalizedDefaultTx,
       },
     ]);
     setExternalUrl('');
@@ -158,7 +177,31 @@ export function PhotoManagerPanel({
     onChange(photos.map((p) => (p.id === id ? { ...p, ...patch } : p)));
   };
 
+  const applyDefaultTransitionToAll = (tx: PhotoTransitionType) => {
+    onTransitionSettingsChange?.({ defaultPhotoTransition: tx });
+    if (photos.length > 0) {
+      onChange(photos.map((p) => ({ ...p, transition: tx })));
+    }
+    setTxPreviewKey((k) => k + 1);
+  };
+
+  const triggerLiveTxPreview = (advancePhoto = false) => {
+    if (advancePhoto) {
+      setTxPreviewIndex((i) => i + 1);
+    }
+    setTxPreviewKey((k) => k + 1);
+  };
+
   const editingPhoto = photos.find((p) => p.id === editingPhotoId) || null;
+  const previewPool =
+    photos.length > 0
+      ? photos.map((p) => ({ url: p.url, caption: p.caption || 'Selected Photo', tx: resolvePhotoTransition(p.transition) }))
+      : [
+          { url: STUDIO_ASSETS.heroGift, caption: 'Studio Sample · Velvet Keepsake', tx: normalizedDefaultTx },
+          { url: STUDIO_ASSETS.floral, caption: 'Studio Sample · Pressed Peonies', tx: normalizedDefaultTx },
+        ];
+  const currentPreviewSample = previewPool[txPreviewIndex % previewPool.length];
+  const activePreviewTx = photos.length > 0 ? normalizedDefaultTx : currentPreviewSample.tx;
 
   return (
     <div className="space-y-6">
@@ -323,11 +366,125 @@ export function PhotoManagerPanel({
         </div>
       )}
 
+      {/* Slideshow & 20-Transition Studio Controls */}
+      <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/40 p-4 space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-rose-700 dark:text-rose-400" />
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-200">
+              Photo Transition &amp; Slideshow Studio ({PHOTO_TRANSITIONS.length} Effects)
+            </h3>
+          </div>
+          <button
+            type="button"
+            onClick={() => triggerLiveTxPreview(true)}
+            className="min-h-[34px] px-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-medium flex items-center gap-1.5 hover:border-rose-500"
+          >
+            <Play className="w-3.5 h-3.5 text-rose-700 dark:text-rose-400" />
+            <span>Test Live Transition</span>
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
+          <div className="md:col-span-5 photo-tx-stage">
+            <div
+              key={`${txPreviewKey}-${normalizedDefaultTx}`}
+              className={`aspect-[4/3] w-full rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 bg-slate-900 relative photo-tx-${activePreviewTx}`}
+              style={{ ['--photo-tx-duration' as string]: `${transitionDurationMs}ms` }}
+            >
+              <img
+                src={currentPreviewSample.url}
+                alt={currentPreviewSample.caption}
+                referrerPolicy="no-referrer"
+                className="w-full h-full object-cover"
+              />
+              <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent px-3 py-2 text-[11px] text-white flex items-center justify-between gap-2">
+                <span className="truncate">{currentPreviewSample.caption}</span>
+                <span className="font-mono opacity-80 shrink-0">
+                  {PHOTO_TRANSITIONS.find((t) => t.id === normalizedDefaultTx)?.name}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="md:col-span-7 space-y-3 text-xs">
+            <div className="space-y-1">
+              <label className="block text-slate-600 dark:text-slate-300 font-medium">
+                Default Slideshow Transition
+              </label>
+              <div className="flex flex-wrap gap-2">
+                <select
+                  value={normalizedDefaultTx}
+                  onChange={(e) => {
+                    const nextTx = e.target.value as PhotoTransitionType;
+                    onTransitionSettingsChange?.({ defaultPhotoTransition: nextTx });
+                    setTxPreviewKey((k) => k + 1);
+                  }}
+                  className="flex-1 min-w-[180px] min-h-[40px] px-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs"
+                >
+                  {PHOTO_TRANSITIONS.map((tx) => (
+                    <option key={tx.id} value={tx.id}>
+                      {tx.name} — {tx.description}
+                    </option>
+                  ))}
+                </select>
+                {photos.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => applyDefaultTransitionToAll(normalizedDefaultTx)}
+                    className="min-h-[40px] px-3 rounded-lg bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-xs font-medium shrink-0"
+                  >
+                    Apply to All Photos
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <label className="block space-y-1">
+                <span className="text-slate-600 dark:text-slate-300">
+                  Transition Duration ({(transitionDurationMs / 1000).toFixed(2)}s)
+                </span>
+                <input
+                  type="range"
+                  min={350}
+                  max={2000}
+                  step={50}
+                  value={transitionDurationMs}
+                  onChange={(e) => {
+                    onTransitionSettingsChange?.({ transitionDurationMs: Number(e.target.value) });
+                    setTxPreviewKey((k) => k + 1);
+                  }}
+                  className="w-full accent-rose-700"
+                />
+              </label>
+
+              <label className="block space-y-1">
+                <span className="text-slate-600 dark:text-slate-300">
+                  Slideshow Timing ({(slideshowIntervalMs / 1000).toFixed(1)}s / slide)
+                </span>
+                <input
+                  type="range"
+                  min={2500}
+                  max={10000}
+                  step={500}
+                  value={slideshowIntervalMs}
+                  onChange={(e) =>
+                    onTransitionSettingsChange?.({ slideshowIntervalMs: Number(e.target.value) })
+                  }
+                  className="w-full accent-rose-700"
+                />
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Selected Photos List */}
       <div className="space-y-3">
         <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
           <span>Selected Photos ({photos.length} / {maxPhotos})</span>
-          <span>Tap Crop &amp; Position to adjust framing</span>
+          <span>Assign individual transitions or adjust framing per photo</span>
         </div>
 
         {photos.length === 0 ? (
@@ -354,7 +511,7 @@ export function PhotoManagerPanel({
                   />
                 </div>
 
-                <div className="flex-1 min-w-0 space-y-1.5 w-full">
+                <div className="flex-1 min-w-0 space-y-2 w-full">
                   <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
                     <span className="font-medium text-slate-800 dark:text-slate-200">
                       {photo.sourceType === 'uploaded'
@@ -371,13 +528,29 @@ export function PhotoManagerPanel({
                     )}
                   </div>
 
-                  <input
-                    type="text"
-                    value={photo.caption || ''}
-                    onChange={(e) => updatePhoto(photo.id, { caption: e.target.value })}
-                    placeholder="Photo caption..."
-                    className="w-full min-h-[36px] px-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-transparent text-xs outline-none focus:border-rose-600"
-                  />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <input
+                      type="text"
+                      value={photo.caption || ''}
+                      onChange={(e) => updatePhoto(photo.id, { caption: e.target.value })}
+                      placeholder="Photo caption..."
+                      className="w-full min-h-[36px] px-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-transparent text-xs outline-none focus:border-rose-600"
+                    />
+                    <select
+                      value={resolvePhotoTransition(photo.transition)}
+                      onChange={(e) =>
+                        updatePhoto(photo.id, { transition: e.target.value as PhotoTransitionType })
+                      }
+                      aria-label="Per-photo transition"
+                      className="w-full min-h-[36px] px-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs"
+                    >
+                      {PHOTO_TRANSITIONS.map((tx) => (
+                        <option key={tx.id} value={tx.id}>
+                          Transition: {tx.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-1.5 shrink-0">
@@ -442,17 +615,25 @@ export function PhotoManagerPanel({
               </button>
             </div>
 
-            <div className="aspect-[4/3] w-full rounded-xl overflow-hidden bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
-              <img
-                src={editingPhoto.url}
-                alt="Crop preview"
-                referrerPolicy="no-referrer"
-                className="w-full h-full object-cover"
-                style={{
-                  objectPosition: `${editingPhoto.cropPosition.x}% ${editingPhoto.cropPosition.y}%`,
-                  transform: `scale(${editingPhoto.cropPosition.zoom})`,
-                }}
-              />
+            <div className="photo-tx-stage">
+              <div
+                key={`modal-${editingPhoto.id}-${resolvePhotoTransition(editingPhoto.transition)}-${txPreviewKey}`}
+                className={`aspect-[4/3] w-full rounded-xl overflow-hidden bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 photo-tx-${resolvePhotoTransition(
+                  editingPhoto.transition
+                )}`}
+                style={{ ['--photo-tx-duration' as string]: `${transitionDurationMs}ms` }}
+              >
+                <img
+                  src={editingPhoto.url}
+                  alt="Crop preview"
+                  referrerPolicy="no-referrer"
+                  className="w-full h-full object-cover"
+                  style={{
+                    objectPosition: `${editingPhoto.cropPosition.x}% ${editingPhoto.cropPosition.y}%`,
+                    transform: `scale(${editingPhoto.cropPosition.zoom})`,
+                  }}
+                />
+              </div>
             </div>
 
             <div className="space-y-3 text-xs">
@@ -511,21 +692,34 @@ export function PhotoManagerPanel({
                 />
               </label>
 
-              <label className="block space-y-1">
-                <span className="text-slate-600 dark:text-slate-300">Slideshow Transition</span>
-                <select
-                  value={editingPhoto.transition}
-                  onChange={(e) =>
-                    updatePhoto(editingPhoto.id, { transition: e.target.value as PhotoTransitionType })
-                  }
-                  className="w-full min-h-[40px] px-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs"
+              <div className="flex items-end gap-2">
+                <label className="block space-y-1 flex-1">
+                  <span className="text-slate-600 dark:text-slate-300">Slideshow Transition</span>
+                  <select
+                    value={resolvePhotoTransition(editingPhoto.transition)}
+                    onChange={(e) => {
+                      updatePhoto(editingPhoto.id, {
+                        transition: e.target.value as PhotoTransitionType,
+                      });
+                      setTxPreviewKey((k) => k + 1);
+                    }}
+                    className="w-full min-h-[40px] px-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs"
+                  >
+                    {PHOTO_TRANSITIONS.map((tx) => (
+                      <option key={tx.id} value={tx.id}>
+                        {tx.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setTxPreviewKey((k) => k + 1)}
+                  className="min-h-[40px] px-3 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-medium shrink-0"
                 >
-                  <option value="fade">Gentle Fade</option>
-                  <option value="slide">Smooth Slide</option>
-                  <option value="zoom">Ken Burns Zoom</option>
-                  <option value="polaroid-float">Floating Polaroid</option>
-                </select>
-              </label>
+                  Replay
+                </button>
+              </div>
             </div>
 
             <button

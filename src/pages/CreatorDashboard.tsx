@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Copy, Edit3, ExternalLink, Plus, Share2, Trash2 } from 'lucide-react';
+import { Copy, Edit3, ExternalLink, Film, Plus, Share2, Trash2 } from 'lucide-react';
 import { useApp } from '../components/AppContext';
 import { deleteGreetingDraft, fetchCreatorGreetings } from '../lib/firestoreService';
 import { buildGreetingShareUrl, ShareModal } from '../components/ShareModal';
@@ -199,6 +199,15 @@ export function CreatorDashboard({ navigate }: { navigate: (next: AppRoute) => v
                       >
                         <Edit3 className="w-3.5 h-3.5" />
                         <span>Edit</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => navigate({ page: 'create', editId: g.id, openVideoStudio: true })}
+                        className="min-h-[38px] px-3 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-medium flex items-center gap-1.5 hover:bg-slate-50 dark:hover:bg-slate-800"
+                      >
+                        <Film className="w-3.5 h-3.5 text-rose-700 dark:text-rose-400" />
+                        <span>Export Video</span>
                       </button>
 
                       {g.status === 'published' && (

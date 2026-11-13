@@ -4,8 +4,14 @@ import type {
   Category,
   DesignConfig,
   ExperienceStepKey,
+  Greeting,
+  PhotoPresentationLayout,
+  PhotoTransitionType,
   PlatformSettings,
+  SlideshowStyleId,
   Template,
+  TextAnimationStyle,
+  VideoStudioConfig,
 } from './types';
 
 export const DEFAULT_PLATFORM_SETTINGS: PlatformSettings = {
@@ -470,6 +476,294 @@ export const EXPERIENCE_STEP_LABELS: Record<ExperienceStepKey, string> = {
   'closing-signature': 'Date & Closing Signature',
 };
 
+export interface PhotoTransitionDefinition {
+  id: PhotoTransitionType;
+  name: string;
+  description: string;
+  category: 'classic' | 'directional' | 'cinematic' | 'editorial';
+}
+
+export const PHOTO_TRANSITIONS: PhotoTransitionDefinition[] = [
+  { id: 'fade', name: 'Fade In / Out', description: 'Gentle opacity fade', category: 'classic' },
+  { id: 'slide-left', name: 'Smooth Slide Left', description: 'Crisp leftward glide', category: 'directional' },
+  { id: 'slide-right', name: 'Smooth Slide Right', description: 'Crisp rightward glide', category: 'directional' },
+  { id: 'slide-up', name: 'Slide Up', description: 'Rises softly into frame', category: 'directional' },
+  { id: 'slide-down', name: 'Slide Down', description: 'Drops gracefully into place', category: 'directional' },
+  { id: 'zoom-in', name: 'Zoom In', description: 'Warm focal magnification', category: 'cinematic' },
+  { id: 'zoom-out', name: 'Zoom Out', description: 'Settles from close-up', category: 'cinematic' },
+  { id: 'ken-burns', name: 'Ken Burns Effect', description: 'Slow documentary pan & zoom', category: 'cinematic' },
+  { id: 'flip-3d', name: '3D Flip', description: 'Perspective Y-axis card turn', category: 'cinematic' },
+  { id: 'card-reveal-3d', name: '3D Card Reveal', description: 'Tilted keepsake card lift', category: 'cinematic' },
+  { id: 'crossfade', name: 'Crossfade', description: 'Velvet blend over previous photo', category: 'classic' },
+  { id: 'blur-reveal', name: 'Blur Reveal', description: 'Soft focus sharpening into view', category: 'classic' },
+  { id: 'circular-reveal', name: 'Circular Reveal', description: 'Expanding circular iris wipe', category: 'editorial' },
+  { id: 'rotate-reveal', name: 'Rotating Reveal', description: 'Subtle arc tilt & settle', category: 'editorial' },
+  { id: 'dissolve', name: 'Elegant Dissolve', description: 'Luminous satin dissolve', category: 'classic' },
+  { id: 'polaroid-reveal', name: 'Polaroid Photo Reveal', description: 'Prints & settles like film', category: 'editorial' },
+  { id: 'stacked-photo', name: 'Stacked Photo Transition', description: 'Deals from an album stack', category: 'editorial' },
+  { id: 'filmstrip', name: 'Filmstrip Transition', description: 'Cinema reel frame advance', category: 'editorial' },
+  { id: 'parallax', name: 'Parallax Photo Movement', description: 'Layered depth drift', category: 'cinematic' },
+  { id: 'soft-light', name: 'Soft Light Reveal', description: 'Warm sunlit sweep reveal', category: 'classic' },
+  { id: 'split-screen', name: 'Split-Screen Reveal', description: 'Dual-half curtain reveal', category: 'editorial' },
+  { id: 'film-burn', name: 'Film Burn Wash', description: 'Warm amber projector flash', category: 'cinematic' },
+  { id: 'light-sweep', name: 'Light Sweep Wipe', description: 'Luminous directional beam wipe', category: 'cinematic' },
+  { id: 'geometric-reveal', name: 'Geometric Diamond Reveal', description: 'Expanding diamond aperture clip', category: 'editorial' },
+  { id: 'layered-reveal', name: 'Layered Album Reveal', description: 'Staggered backing frame reveal', category: 'editorial' },
+  { id: 'camera-pan', name: 'Dynamic Camera Pan', description: 'Fluid lateral cinema pan', category: 'cinematic' },
+];
+
+export interface SlideshowStyleDefinition {
+  id: SlideshowStyleId;
+  name: string;
+  tagline: string;
+  description: string;
+  defaultTransition: PhotoTransitionType;
+  defaultPresentation: PhotoPresentationLayout;
+  defaultTextAnimation: TextAnimationStyle;
+  palette: {
+    backdrop: string;
+    accent: string;
+    surface: string;
+    text: string;
+  };
+  borderStyle: VideoStudioConfig['photoFrame']['borderStyle'];
+  blurBackdrop: boolean;
+}
+
+export const SLIDESHOW_STYLES: SlideshowStyleDefinition[] = [
+  {
+    id: 'cinematic-memories',
+    name: 'Cinematic Memories',
+    tagline: 'Letterbox depth & golden rim grade',
+    description: 'Deep theater bars, smooth Ken Burns zooms, subtle teal-amber grading, and slow title reveals.',
+    defaultTransition: 'ken-burns',
+    defaultPresentation: 'fullscreen',
+    defaultTextAnimation: 'cinematic-title',
+    palette: { backdrop: '#090D16', accent: '#F59E0B', surface: '#121928', text: '#F8FAFC' },
+    borderStyle: 'none',
+    blurBackdrop: true,
+  },
+  {
+    id: 'romantic-memories',
+    name: 'Romantic Memories',
+    tagline: 'Blush mist, soft glows & poetry',
+    description: 'Warm rosewater gradients, drifting petals/hearts aesthetic, handwriting text reveal, and velvet dissolves.',
+    defaultTransition: 'dissolve',
+    defaultPresentation: 'framed',
+    defaultTextAnimation: 'handwriting',
+    palette: { backdrop: '#230C18', accent: '#FB7185', surface: '#341324', text: '#FFF1F2' },
+    borderStyle: 'thin',
+    blurBackdrop: true,
+  },
+  {
+    id: 'birthday-celebration',
+    name: 'Birthday Celebration',
+    tagline: 'Bright confetti & upbeat reveals',
+    description: 'Celebratory glow rings, dynamic zoom/card flips, energetic sparkles, and festive caption bands.',
+    defaultTransition: 'card-reveal-3d',
+    defaultPresentation: 'animated-card',
+    defaultTextAnimation: 'zoom-reveal',
+    palette: { backdrop: '#111827', accent: '#F43F5E', surface: '#1F2937', text: '#FFFFFF' },
+    borderStyle: 'thin',
+    blurBackdrop: true,
+  },
+  {
+    id: 'elegant-gallery',
+    name: 'Elegant Gallery',
+    tagline: 'Curated exhibition framing',
+    description: 'Museum-grade ivory mats, crisp architectural margins, gallery placard captions, and soft fades.',
+    defaultTransition: 'crossfade',
+    defaultPresentation: 'framed',
+    defaultTextAnimation: 'fade-in',
+    palette: { backdrop: '#F4F1EA', accent: '#9F1239', surface: '#FFFFFF', text: '#0F172A' },
+    borderStyle: 'double',
+    blurBackdrop: false,
+  },
+  {
+    id: 'film-memories',
+    name: 'Film Memories',
+    tagline: '35mm analog sprocket reel',
+    description: 'Authentic film sprockets, warm analog grain texture, frame numbers, and projector burn transitions.',
+    defaultTransition: 'film-burn',
+    defaultPresentation: 'filmstrip',
+    defaultTextAnimation: 'typewriter',
+    palette: { backdrop: '#14110F', accent: '#D97706', surface: '#1E1915', text: '#FEF3C7' },
+    borderStyle: 'thin',
+    blurBackdrop: false,
+  },
+  {
+    id: 'modern-dynamic',
+    name: 'Modern Dynamic',
+    tagline: 'Crisp split wipes & kinetic type',
+    description: 'High-contrast asymmetric framing, sharp split-screen & slide reveals, and punchy modern typography.',
+    defaultTransition: 'split-screen',
+    defaultPresentation: 'two-photo',
+    defaultTextAnimation: 'smooth-slide',
+    palette: { backdrop: '#0F172A', accent: '#38BDF8', surface: '#1E293B', text: '#F8FAFC' },
+    borderStyle: 'none',
+    blurBackdrop: true,
+  },
+  {
+    id: 'photo-album',
+    name: 'Photo Album',
+    tagline: 'Tactile Polaroid & scrapbook keepsake',
+    description: 'Warm parchment spread, angled Polaroid mats with soft paper shadows, and stacked album reveals.',
+    defaultTransition: 'polaroid-reveal',
+    defaultPresentation: 'polaroid',
+    defaultTextAnimation: 'handwriting',
+    palette: { backdrop: '#EFE9DF', accent: '#B45309', surface: '#FFFDF9', text: '#1E293B' },
+    borderStyle: 'polaroid',
+    blurBackdrop: false,
+  },
+  {
+    id: 'luxury-presentation',
+    name: 'Luxury Presentation',
+    tagline: 'Obsidian & brushed gold foil',
+    description: 'Obsidian velvet stage with double gold hairline frames, radiant glow text, and slow regal camera pans.',
+    defaultTransition: 'light-sweep',
+    defaultPresentation: 'framed',
+    defaultTextAnimation: 'glow-reveal',
+    palette: { backdrop: '#07080C', accent: '#EAB308', surface: '#101219', text: '#FAF7F0' },
+    borderStyle: 'gold',
+    blurBackdrop: true,
+  },
+  {
+    id: 'emotional-storytelling',
+    name: 'Emotional Storytelling',
+    tagline: 'Intimate prose & soft-focus drift',
+    description: 'Unobtrusive full-bleed visuals paired with soft blur text reveals and unhurried letter-by-letter cadence.',
+    defaultTransition: 'blur-reveal',
+    defaultPresentation: 'fullscreen',
+    defaultTextAnimation: 'soft-blur',
+    palette: { backdrop: '#111622', accent: '#FDA4AF', surface: '#182032', text: '#F8FAFC' },
+    borderStyle: 'none',
+    blurBackdrop: true,
+  },
+  {
+    id: 'classic-slideshow',
+    name: 'Classic Slideshow',
+    tagline: 'Timeless clean balanced presentation',
+    description: 'Clear aspect-safe framing, crisp captions below each memory, and smooth classic fades.',
+    defaultTransition: 'fade',
+    defaultPresentation: 'framed',
+    defaultTextAnimation: 'fade-in',
+    palette: { backdrop: '#F8FAFC', accent: '#BE123C', surface: '#FFFFFF', text: '#0F172A' },
+    borderStyle: 'thin',
+    blurBackdrop: true,
+  },
+];
+
+export const PHOTO_PRESENTATIONS: Array<{
+  id: PhotoPresentationLayout;
+  name: string;
+  description: string;
+}> = [
+  { id: 'fullscreen', name: 'Full-Screen', description: 'Edge-to-edge canvas fit with blur backdrop fill' },
+  { id: 'framed', name: 'Framed Gallery', description: 'Elevated matte border with balanced margins' },
+  { id: 'polaroid', name: 'Polaroid Style', description: 'Tactile white instant-print mat & caption lip' },
+  { id: 'two-photo', name: 'Two-Photo Pairing', description: 'Complementary asymmetric memory duo' },
+  { id: 'collage', name: 'Collage Grid', description: 'Up to 3–4 curated memories per scene' },
+  { id: 'stacked', name: 'Stacked Cards', description: 'Layered physical prints fanned softly' },
+  { id: 'side-by-side', name: 'Side-by-Side', description: 'Symmetric dual-panel comparison showcase' },
+  { id: 'filmstrip', name: 'Filmstrip Reel', description: 'Cinema reel frames sliding sequentially' },
+  { id: 'animated-card', name: 'Animated Photo Card', description: 'Tilted 3D keepsake card floating in frame' },
+];
+
+export const TEXT_ANIMATIONS: Array<{
+  id: TextAnimationStyle;
+  name: string;
+  description: string;
+}> = [
+  { id: 'fade-in', name: 'Fade In', description: 'Smooth gentle opacity entrance' },
+  { id: 'typewriter', name: 'Typewriter', description: 'Character-by-character typed cursor' },
+  { id: 'smooth-slide', name: 'Smooth Slide', description: 'Crisp upward slide into rest' },
+  { id: 'zoom-reveal', name: 'Zoom Reveal', description: 'Expands warmly from focal depth' },
+  { id: 'handwriting', name: 'Handwriting Sweep', description: 'Fluid left-to-right ink brush wipe' },
+  { id: 'floating', name: 'Floating Text', description: 'Weightless gentle vertical suspension' },
+  { id: 'letter-by-letter', name: 'Letter by Letter', description: 'Staggered typographic cascade' },
+  { id: 'cinematic-title', name: 'Cinematic Title', description: 'Wide-tracked film title settle' },
+  { id: 'glow-reveal', name: 'Glow Reveal', description: 'Luminous golden halo bloom' },
+  { id: 'soft-blur', name: 'Soft Blur Reveal', description: 'Focus pull from atmospheric haze' },
+];
+
+export function resolvePhotoTransition(raw?: PhotoTransitionType): PhotoTransitionType {
+  if (!raw) return 'fade';
+  if (raw === 'slide') return 'slide-left';
+  if (raw === 'zoom') return 'zoom-in';
+  if (raw === 'polaroid-float') return 'polaroid-reveal';
+  return raw;
+}
+
+export function createDefaultVideoStudioConfig(greeting?: Partial<Greeting>): VideoStudioConfig {
+  const existing = greeting?.designConfig?.videoConfig;
+  if (existing) {
+    return existing;
+  }
+
+  const cat = greeting?.categoryId || 'birthday';
+  const defaultStyleId: SlideshowStyleId =
+    cat === 'birthday'
+      ? 'birthday-celebration'
+      : cat === 'romantic-love' || cat === 'valentines'
+      ? 'romantic-memories'
+      : cat === 'wedding'
+      ? 'elegant-gallery'
+      : cat === 'anniversary'
+      ? 'cinematic-memories'
+      : 'classic-slideshow';
+
+  const preset = SLIDESHOW_STYLES.find((s) => s.id === defaultStyleId) || SLIDESHOW_STYLES[0];
+  const slideSec = Math.max(
+    2.5,
+    Math.min(10, Math.round(((greeting?.designConfig?.slideshowIntervalMs || 4000) / 1000) * 10) / 10)
+  );
+
+  return {
+    aspectRatio: '16:9',
+    resolution: '720p',
+    fps: 30,
+    quality: 'high',
+    format: 'mp4',
+    slideshowStyle: preset.id,
+    photoPresentation: preset.defaultPresentation,
+    slideDurationSec: slideSec,
+    customTotalDurationSec: null,
+    photoFrame: {
+      blurBackdrop: preset.blurBackdrop,
+      borderStyle: preset.borderStyle,
+      shadowIntensity: 'soft',
+      borderRadius: 18,
+      spacing: 28,
+    },
+    textStyle: {
+      animation: preset.defaultTextAnimation,
+      animDurationMs: 900,
+      displayDurationSec: 4.5,
+      fontSizeScale: greeting?.designConfig?.fontSizeScale || 'standard',
+      align: greeting?.designConfig?.textAlign || 'center',
+      position: greeting?.designConfig?.textPosition || 'bottom',
+    },
+    openingScene: {
+      enabled: true,
+      title: greeting?.title || 'A Special Keepsake',
+      subtitle: greeting?.recipientName ? `For ${greeting.recipientName}` : 'Created with Love',
+      durationSec: 3.5,
+      showIntroPhoto: true,
+    },
+    closingScene: {
+      enabled: true,
+      title: 'With Love Always',
+      message: greeting?.cardDate || 'A moment to keep forever',
+      signature: greeting?.signature || (greeting?.senderName ? `With love, ${greeting.senderName}` : 'Keepsake'),
+      durationSec: 3.5,
+    },
+    audioOptions: {
+      fadeInSec: 1.5,
+      fadeOutSec: 2.0,
+    },
+  };
+}
+
 export function createDefaultDesignConfig(template?: Template): DesignConfig {
   return {
     backgroundType: 'gradient',
@@ -484,6 +778,9 @@ export function createDefaultDesignConfig(template?: Template): DesignConfig {
     textPosition: 'center',
     photoLayout: template?.layoutPreset || 'slideshow',
     presentationMode: 'interactive-card',
+    defaultPhotoTransition: 'fade',
+    transitionDurationMs: 750,
+    slideshowIntervalMs: 4500,
     stickers: [],
     sequenceOrder: [...DEFAULT_SEQUENCE_ORDER],
     animationIntensity: 'balanced',

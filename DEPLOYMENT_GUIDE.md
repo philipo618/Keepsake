@@ -20,6 +20,7 @@
 ## Step 3: Verify Cloud Firestore
 1. Go to **Build → Firestore Database**.
 2. Confirm the database ID matches `firebase-applet-config.json` (`ai-studio-4f3bd88e-95e5-4469-8be1-a33cea212c13`).
+3. `functions/src/index.ts` and `firebase.json` are pre-configured to target `ai-studio-4f3bd88e-95e5-4469-8be1-a33cea212c13`.
 
 ## Step 4: Enable Firebase Storage
 1. Go to **Build → Storage** and click **Get Started**.
@@ -30,18 +31,19 @@
 3. Configure CORS on your Storage bucket if uploading directly from GitHub Pages.
 
 ## Step 5: Configure & Deploy Firebase Cloud Functions (Blaze Plan Required)
-1. Upgrade the Firebase project to the **Blaze** plan if deploying Cloud Functions for standalone GitHub Pages hosting.
-2. Install dependencies and deploy:
+1. Upgrade the Firebase project (`pd-ai-2`) to the **Blaze** plan if deploying Cloud Functions for standalone GitHub Pages hosting.
+2. Install dependencies, compile, and deploy:
    ```bash
    cd functions
    npm install
    npm run build
+   cd ..
    firebase deploy --only functions
    ```
-3. Copy the deployed `api` function URL (e.g. `https://us-central1-YOUR-PROJECT.cloudfunctions.net/api`) and set it as `VITE_API_BASE_URL` in your GitHub repository Secrets.
+3. Copy the deployed `api` function URL printed by Firebase CLI (format: `https://<region>-pd-ai-2.cloudfunctions.net/api` or Cloud Run `https://api-<hash>-uc.a.run.app`) and set it as `VITE_API_BASE_URL` in your GitHub repository **Settings → Secrets and variables → Actions**.
 
 ## Step 6: Apply Firestore Security Rules
-1. Rules are stored in `firestore.rules` (and already validated with `@firebase/eslint-plugin-security-rules`).
+1. Rules are stored in `firestore.rules` (and validated with `@firebase/eslint-plugin-security-rules`).
 2. Whenever you modify `firestore.rules`, re-deploy via:
    ```bash
    firebase deploy --only firestore:rules
@@ -70,8 +72,13 @@ git push -u origin main
 4. Trigger or push to `main` to run `.github/workflows/deploy-gh-pages.yml`.
 5. `public/404.html` and `index.html` automatically preserve direct `/g/:id` URLs and browser refreshes on GitHub Pages.
 
-## Step 10: Post-Deployment Acceptance Checklist
+## Step 10: Video Export Pipeline (MP4 vs WebM)
+- **Full-Stack / Express / Cloud Run Host (with FFmpeg)**: `server.ts` includes `POST /api/video/transcode` backed by `ffmpeg` (`libx264` + `aac` + `faststart`), producing universally playable `.mp4` files as well as browser-native `.webm`.
+- **Static GitHub Pages Without Custom Express/Cloud Run Backend**: Browser `MediaRecorder` natively exports genuine `.webm` video files (and native `.mp4` only on browsers whose `MediaRecorder` natively implements H.264/MP4). Standard Firebase Cloud Functions v2 without a custom Docker/FFmpeg binary do not expose `POST /api/video/transcode`, so deploy `server.ts` to Cloud Run (or point `VITE_API_BASE_URL` to a Cloud Run container with `ffmpeg` installed) if server-side MP4 conversion is required on GitHub Pages.
+
+## Step 11: Post-Deployment Acceptance Checklist
 1. Sign in as the authorized administrator (`philipodickson96@gmail.com`) at `/admin` and click **Seed Default Catalog** to populate Firestore `categories`, `templates`, `mediaLibrary`, and `platformSettings`.
 2. Create a birthday greeting card, upload photos, select/upload music, configure Day/Month/Year + custom questions, publish, and test the generated `/g/:id` URL in an incognito window.
 3. Verify incorrect verification answers are rejected and valid answers unlock the full animated experience.
-4. Verify unauthorized visitors attempting `/admin` receive **Access Denied**.
+4. Open the **Video Export Studio**, preview multiple slideshow styles & photo layouts, export a video, and verify `.mp4` / `.webm` playback cleanly.
+5. Verify unauthorized visitors attempting `/admin` receive **Access Denied**.

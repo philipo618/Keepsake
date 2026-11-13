@@ -128,7 +128,7 @@ service cloud.firestore {
 
     function isValidGreeting(data) {
       return data.keys().hasAll(['id', 'creatorId', 'categoryId', 'recipientName', 'senderName', 'title', 'mainMessage', 'accessMode', 'status', 'createdAt', 'updatedAt']) &&
-        data.keys().hasOnly(['id', 'creatorId', 'categoryId', 'templateId', 'recipientName', 'senderName', 'title', 'mainMessage', 'additionalMessages', 'cardDate', 'signature', 'designConfig', 'photos', 'musicConfig', 'animations', 'accessMode', 'verificationMeta', 'status', 'isReported', 'viewCount', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['id', 'creatorId', 'categoryId', 'templateId', 'recipientName', 'senderName', 'title', 'mainMessage', 'additionalMessages', 'cardDate', 'signature', 'designConfig', 'photos', 'musicConfig', 'animations', 'accessMode', 'verificationMeta', 'status', 'exportedVideo', 'isReported', 'viewCount', 'createdAt', 'updatedAt']) &&
         isValidId(data.id) &&
         isValidId(data.creatorId) &&
         isValidId(data.categoryId) &&
@@ -147,6 +147,7 @@ service cloud.firestore {
         data.accessMode in ['direct', 'interactive'] &&
         (!('verificationMeta' in data) || data.verificationMeta is map) &&
         data.status in ['draft', 'published', 'unpublished'] &&
+        (!('exportedVideo' in data) || data.exportedVideo == null || data.exportedVideo is map) &&
         (!('isReported' in data) || data.isReported is bool) &&
         (!('viewCount' in data) || (data.viewCount is number && data.viewCount >= 0));
     }
@@ -292,7 +293,7 @@ service cloud.firestore {
             'categoryId', 'templateId', 'recipientName', 'senderName', 'title',
             'mainMessage', 'additionalMessages', 'cardDate', 'signature',
             'designConfig', 'photos', 'musicConfig', 'animations', 'accessMode',
-            'verificationMeta', 'status', 'updatedAt'
+            'verificationMeta', 'status', 'exportedVideo', 'updatedAt'
           ])
         )
       );

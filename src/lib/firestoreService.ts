@@ -14,6 +14,7 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 import { auth, db, handleFirestoreError, OperationType } from './firebase';
+import { buildApiUrl } from './api';
 import { DEFAULT_CATEGORIES, DEFAULT_PLATFORM_SETTINGS, DEFAULT_TEMPLATES } from './catalog';
 import { LICENSED_MUSIC_LIBRARY } from './audioEngine';
 import { STUDIO_ASSETS } from './assets';
@@ -28,8 +29,6 @@ import type {
   Template,
   VerificationSecretsInput,
 } from './types';
-
-const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
 export function generateShortId(prefix = 'g'): string {
   const chars = 'abcdefghjkmnpqrstuvwxyz23456789';
@@ -277,6 +276,7 @@ export async function saveGreeting(
     accessMode: greeting.accessMode,
     verificationMeta: greeting.verificationMeta,
     status: greeting.status,
+    exportedVideo: isInteractive ? null : (greeting.exportedVideo ?? null),
     isReported: existingSnap.exists() ? Boolean(existingSnap.data().isReported) : false,
     viewCount: existingSnap.exists() ? Number(existingSnap.data().viewCount || 0) : 0,
     updatedAt: serverTimestamp(),
@@ -307,6 +307,7 @@ export async function saveGreeting(
         accessMode: publicGreetingData.accessMode,
         verificationMeta: publicGreetingData.verificationMeta,
         status: publicGreetingData.status,
+        exportedVideo: publicGreetingData.exportedVideo,
         updatedAt: serverTimestamp(),
       });
     }
@@ -319,6 +320,7 @@ export async function saveGreeting(
         cardDate: (greeting.cardDate || '').slice(0, 64),
         signature: (greeting.signature || '').slice(0, 120),
         photos: greeting.photos.slice(0, 12),
+        exportedVideo: greeting.exportedVideo ?? null,
       };
 
       const secretRef = doc(db, 'greetings', greeting.id, 'secrets', 'verification');
@@ -343,7 +345,7 @@ export async function saveGreeting(
 
       // Sync to protected backend verification vault
       const idToken = await user.getIdToken();
-      const resp = await fetch(`${API_BASE}/api/greetings/${greeting.id}/secrets`, {
+      const resp = await fetch(buildApiUrl(`/greetings/${greeting.id}/secrets`), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -430,7 +432,7 @@ export async function deleteGreetingDraft(greetingId: string): Promise<void> {
     await deleteDoc(doc(db, 'greetings', greetingId));
     if (auth.currentUser) {
       const idToken = await auth.currentUser.getIdToken();
-      await fetch(`${API_BASE}/api/greetings/${greetingId}/secrets`, {
+      await fetch(buildApiUrl(`/greetings/${greetingId}/secrets`), {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${idToken}` },
       }).catch(() => {});
@@ -446,7 +448,7 @@ export async function checkVerificationStep(
   greetingId: string,
   payload: { step: 'day' | 'month' | 'year' | 'custom'; value: unknown; questionId?: string }
 ): Promise<{ valid: boolean; locked?: boolean; remainingAttempts?: number; message?: string }> {
-  const resp = await fetch(`${API_BASE}/api/greetings/${greetingId}/check-step`, {
+  const resp = await fetch(buildApiUrl(`/greetings/${greetingId}/check-step`), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
@@ -473,9 +475,10 @@ export async function verifyFullGreeting(
     cardDate?: string;
     signature?: string;
     photos?: Greeting['photos'];
+    exportedVideo?: Greeting['exportedVideo'];
   };
 }> {
-  const resp = await fetch(`${API_BASE}/api/greetings/${greetingId}/verify`, {
+  const resp = await fetch(buildApiUrl(`/greetings/${greetingId}/verify`), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
@@ -491,6 +494,7 @@ export async function verifyFullGreeting(
       cardDate?: string;
       signature?: string;
       photos?: Greeting['photos'];
+      exportedVideo?: Greeting['exportedVideo'];
     };
   };
 }

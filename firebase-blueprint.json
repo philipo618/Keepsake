@@ -141,6 +141,7 @@
         "accessMode": { "type": "string", "enum": ["direct", "interactive"] },
         "verificationMeta": { "type": "object" },
         "status": { "type": "string", "enum": ["draft", "published", "unpublished"] },
+        "exportedVideo": { "type": "object" },
         "isReported": { "type": "boolean" },
         "viewCount": { "type": "number" },
         "createdAt": { "type": "string", "format": "date-time" },

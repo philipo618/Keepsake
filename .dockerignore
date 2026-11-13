@@ -1,0 +1,14 @@
+node_modules
+dist
+dist-server
+data
+.git
+.github
+.env
+.env.*
+!.env.example
+.aistudio
+functions/node_modules
+functions/lib
+*.log
+/tmp

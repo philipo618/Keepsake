@@ -34,6 +34,7 @@ function parseRouteFromLocation(): AppRoute {
       editId: params.get('edit') || undefined,
       templateId: params.get('template') || undefined,
       categoryId: params.get('category') || undefined,
+      openVideoStudio: params.get('video') === '1',
     };
   }
   if (clean === '/studio') return { page: 'dashboard' };
@@ -61,6 +62,7 @@ function buildPathForRoute(route: AppRoute): string {
       if (route.editId) qs.set('edit', route.editId);
       if (route.templateId) qs.set('template', route.templateId);
       if (route.categoryId) qs.set('category', route.categoryId);
+      if (route.openVideoStudio) qs.set('video', '1');
       const qStr = qs.toString();
       return join(`/create${qStr ? `?${qStr}` : ''}`);
     }
@@ -122,6 +124,7 @@ export default function App() {
               editId={route.editId}
               initialTemplateId={route.templateId}
               initialCategoryId={route.categoryId}
+              initialOpenVideoStudio={route.openVideoStudio}
               navigate={navigate}
             />
           )}

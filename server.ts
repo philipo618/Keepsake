@@ -1,29 +1,53 @@
+import { spawn, spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import express from 'express';
 import dotenv from 'dotenv';
-import { createServer as createViteServer } from 'vite';
+
+function resolveFfmpegBinary(): string | null {
+  for (const candidate of ['/usr/bin/ffmpeg', '/usr/local/bin/ffmpeg', 'ffmpeg']) {
+    try {
+      const check = spawnSync(candidate, ['-version'], { encoding: 'utf8', timeout: 3000 });
+      if (check.status === 0) return candidate;
+    } catch {
+      // Try next candidate
+    }
+  }
+  return null;
+}
+
+const FFMPEG_BIN = resolveFfmpegBinary();
 
 dotenv.config();
 
 const PORT = Number(process.env.PORT) || 3000;
 const ROOT_DIR = process.cwd();
-const DATA_DIR = path.join(ROOT_DIR, 'data');
+const DATA_DIR = process.env.DATA_DIR
+  ? path.resolve(process.env.DATA_DIR)
+  : path.join(ROOT_DIR, 'data');
 const UPLOADS_DIR = path.join(DATA_DIR, 'uploads');
 const VAULT_FILE = path.join(DATA_DIR, 'verification-vault.json');
 const STATS_FILE = path.join(DATA_DIR, 'greeting-stats.json');
 
 fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 
-// Read Firebase Project ID safely from firebase-applet-config.json
+// Read Firebase Project & Database IDs safely from firebase-applet-config.json
 let FIREBASE_PROJECT_ID = '';
+let FIREBASE_DATABASE_ID = '';
 try {
   const fbConfigRaw = fs.readFileSync(path.join(ROOT_DIR, 'firebase-applet-config.json'), 'utf8');
   const fbConfig = JSON.parse(fbConfigRaw);
   FIREBASE_PROJECT_ID = fbConfig.projectId || '';
+  FIREBASE_DATABASE_ID = fbConfig.firestoreDatabaseId || '';
 } catch {
   FIREBASE_PROJECT_ID = process.env.FIREBASE_PROJECT_ID || '';
+  FIREBASE_DATABASE_ID = process.env.FIRESTORE_DATABASE_ID || '';
+}
+
+function isValidGreetingId(id: string): boolean {
+  return /^[a-zA-Z0-9_-]{1,128}$/.test(id);
 }
 
 interface StoredSecret {
@@ -183,16 +207,243 @@ function getAttemptKey(greetingId: string, req: express.Request): string {
   return `${greetingId}:${ip}`;
 }
 
+function isOriginAllowed(origin: string): boolean {
+  const configured = (process.env.CORS_ORIGIN || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (configured.length === 0) {
+    return true;
+  }
+  return configured.some((pattern) => {
+    if (pattern === '*') return true;
+    if (pattern.includes('*')) {
+      const escaped = pattern
+        .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
+        .replace(/\\\*/g, '.*');
+      return new RegExp(`^${escaped}$`).test(origin);
+    }
+    return pattern === origin;
+  });
+}
+
+function resolveUploadedMediaUrl(req: express.Request, fileName: string): string {
+  const relPath = `/uploads/${fileName}`;
+  const origin = req.headers.origin;
+  const host = req.get('host');
+  if (origin && host) {
+    try {
+      const originHost = new URL(origin).host;
+      if (originHost !== host) {
+        return `${req.protocol}://${host}${relPath}`;
+      }
+    } catch {
+      // Ignore malformed origin header and fall back to relative path
+    }
+  }
+  return relPath;
+}
+
 async function startServer() {
   const app = express();
+  app.set('trust proxy', 1);
+
+  app.use((req, res, next) => {
+    const origin = req.headers.origin;
+    if (origin && isOriginAllowed(origin)) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Vary', 'Origin');
+    } else if (!process.env.CORS_ORIGIN) {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+    }
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition, Content-Length, Content-Type');
+    if (req.method === 'OPTIONS') {
+      res.status(204).end();
+      return;
+    }
+    next();
+  });
+
   app.use(express.json({ limit: '14mb' }));
 
-  // Serve uploaded media files safely
-  app.use('/uploads', express.static(UPLOADS_DIR, { maxAge: '7d' }));
+  // Serve uploaded media files safely across origins
+  app.use(
+    '/uploads',
+    (_req, res, next) => {
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+      next();
+    },
+    express.static(UPLOADS_DIR, { maxAge: '7d' })
+  );
 
   app.get('/api/health', (_req, res) => {
-    res.json({ ok: true, project: FIREBASE_PROJECT_ID || 'unconfigured' });
+    res.json({
+      ok: true,
+      project: FIREBASE_PROJECT_ID || 'unconfigured',
+      databaseId: FIREBASE_DATABASE_ID || '(default)',
+      ffmpegAvailable: Boolean(FFMPEG_BIN),
+      maxVideoUploadMb: 50,
+    });
   });
+
+  // Transcode WebM rendered video into universal H.264/AAC MP4 using FFmpeg
+  app.post(
+    '/api/video/transcode',
+    express.raw({ type: ['video/webm', 'application/octet-stream'], limit: '85mb' }),
+    async (req, res) => {
+      if (!FFMPEG_BIN) {
+        res.status(501).json({ error: 'FFmpeg is not available on this server.' });
+        return;
+      }
+      const inputBuffer = req.body as Buffer;
+      if (!Buffer.isBuffer(inputBuffer) || inputBuffer.byteLength < 64) {
+        res.status(400).json({ error: 'Invalid or empty WebM video payload.' });
+        return;
+      }
+      // Validate EBML header (0x1A 0x45 0xDF 0xA3)
+      if (
+        inputBuffer[0] !== 0x1a ||
+        inputBuffer[1] !== 0x45 ||
+        inputBuffer[2] !== 0xdf ||
+        inputBuffer[3] !== 0xa3
+      ) {
+        res.status(415).json({ error: 'Uploaded bytes do not match a valid WebM container.' });
+        return;
+      }
+
+      const rawFps = Number(req.query.fps) === 24 ? 24 : 30;
+      const quality = String(req.query.quality || 'high');
+      const crf = quality === 'ultra' ? '18' : quality === 'standard' ? '26' : '22';
+      const safeTitle = String(req.query.title || 'Keepsake_Memory')
+        .replace(/[^a-zA-Z0-9_-]+/g, '_')
+        .slice(0, 48);
+
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'keepsake-ffmpeg-'));
+      const inputPath = path.join(tmpDir, 'input.webm');
+      const outputPath = path.join(tmpDir, 'output.mp4');
+
+      try {
+        fs.writeFileSync(inputPath, inputBuffer);
+        await new Promise<void>((resolve, reject) => {
+          const ffArgs = [
+            '-y',
+            '-i',
+            inputPath,
+            '-c:v',
+            'libx264',
+            '-preset',
+            'fast',
+            '-crf',
+            crf,
+            '-pix_fmt',
+            'yuv420p',
+            '-vf',
+            'scale=trunc(iw/2)*2:trunc(ih/2)*2',
+            '-r',
+            String(rawFps),
+            '-c:a',
+            'aac',
+            '-b:a',
+            '160k',
+            '-movflags',
+            '+faststart',
+            outputPath,
+          ];
+          const child = spawn(FFMPEG_BIN, ffArgs, { stdio: ['ignore', 'ignore', 'pipe'] });
+          let stderr = '';
+          child.stderr.on('data', (chunk) => {
+            if (stderr.length < 4096) stderr += chunk.toString();
+          });
+          const killTimer = setTimeout(() => {
+            child.kill('SIGKILL');
+            reject(new Error('FFmpeg transcoding timed out after 90 seconds.'));
+          }, 90_000);
+          child.on('error', (err) => {
+            clearTimeout(killTimer);
+            reject(err);
+          });
+          child.on('close', (code) => {
+            clearTimeout(killTimer);
+            if (code !== 0) {
+              reject(new Error(`FFmpeg failed with exit code ${code}: ${stderr.slice(-300)}`));
+              return;
+            }
+            resolve();
+          });
+        });
+
+        if (!fs.existsSync(outputPath)) {
+          throw new Error('MP4 output file was not created by FFmpeg.');
+        }
+        const mp4Bytes = fs.readFileSync(outputPath);
+        if (mp4Bytes.byteLength < 128) {
+          throw new Error('FFmpeg produced an empty MP4 output.');
+        }
+
+        res.setHeader('Content-Type', 'video/mp4');
+        res.setHeader('Content-Disposition', `attachment; filename="${safeTitle}.mp4"`);
+        res.setHeader('Content-Length', String(mp4Bytes.byteLength));
+        res.send(mp4Bytes);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'MP4 transcoding error.';
+        res.status(500).json({ error: msg });
+      } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      }
+    }
+  );
+
+  // Binary upload endpoint for creator-attached exported video (max 50 MB)
+  app.post(
+    '/api/video/upload',
+    express.raw({ type: ['video/mp4', 'video/webm'], limit: '52mb' }),
+    async (req, res) => {
+      const user = await verifyFirebaseIdToken(req.headers.authorization);
+      if (!user) {
+        res.status(401).json({ error: 'Authentication required to attach exported video.' });
+        return;
+      }
+      const contentType = String(req.headers['content-type'] || '').split(';')[0].trim();
+      if (contentType !== 'video/mp4' && contentType !== 'video/webm') {
+        res.status(415).json({ error: `Unsupported video format: ${contentType}` });
+        return;
+      }
+      const buf = req.body as Buffer;
+      if (!Buffer.isBuffer(buf) || buf.byteLength < 128) {
+        res.status(400).json({ error: 'Invalid or empty video payload.' });
+        return;
+      }
+      if (buf.byteLength > 50 * 1024 * 1024) {
+        res.status(413).json({ error: 'Video exceeds the 50 MB attachment limit.' });
+        return;
+      }
+      if (contentType === 'video/mp4') {
+        const sig = buf.subarray(4, 8).toString('ascii');
+        if (sig !== 'ftyp') {
+          res.status(415).json({ error: 'Invalid MP4 signature.' });
+          return;
+        }
+      } else if (buf[0] !== 0x1a || buf[1] !== 0x45 || buf[2] !== 0xdf || buf[3] !== 0xa3) {
+        res.status(415).json({ error: 'Invalid WebM signature.' });
+        return;
+      }
+
+      const ext = contentType === 'video/mp4' ? '.mp4' : '.webm';
+      const safeName = String(req.query.fileName || 'video')
+        .replace(/[^a-zA-Z0-9_-]/g, '')
+        .slice(0, 32) || 'video';
+      const uniqueName = `${user.uid.slice(0, 8)}_${Date.now()}_${safeName}${ext}`;
+      fs.writeFileSync(path.join(UPLOADS_DIR, uniqueName), buf);
+
+      res.json({
+        url: resolveUploadedMediaUrl(req, uniqueName),
+        sizeBytes: buf.byteLength,
+        mimeType: contentType,
+      });
+    }
+  );
 
   // Upload media fallback when Firebase Storage bucket is unavailable or CORS-blocked
   app.post('/api/media/upload', async (req, res) => {
@@ -259,7 +510,7 @@ async function startServer() {
     fs.writeFileSync(path.join(UPLOADS_DIR, uniqueName), buffer);
 
     res.json({
-      url: `/uploads/${uniqueName}`,
+      url: resolveUploadedMediaUrl(req, uniqueName),
       sizeBytes: buffer.byteLength,
       mimeType: detectedMime,
     });
@@ -334,6 +585,10 @@ async function startServer() {
       return;
     }
     const greetingId = req.params.id;
+    if (!isValidGreetingId(greetingId)) {
+      res.status(400).json({ error: 'Invalid greeting ID.' });
+      return;
+    }
     const vault = readVault();
     const existingSecret = vault.secrets[greetingId];
     const isAdminUser = user.email === 'philipodickson96@gmail.com' && user.emailVerified === true;
@@ -349,6 +604,10 @@ async function startServer() {
   // Step-by-step verification endpoint (never leaks expected answer)
   app.post('/api/greetings/:id/check-step', (req, res) => {
     const greetingId = req.params.id;
+    if (!isValidGreetingId(greetingId)) {
+      res.status(400).json({ valid: false, message: 'Invalid greeting ID.' });
+      return;
+    }
     const vault = readVault();
     const secret = vault.secrets[greetingId];
     if (!secret) {
@@ -420,10 +679,14 @@ async function startServer() {
   // Full sequence verification & payload unlock
   app.post('/api/greetings/:id/verify', (req, res) => {
     const greetingId = req.params.id;
+    if (!isValidGreetingId(greetingId)) {
+      res.status(400).json({ verified: false, message: 'Invalid greeting ID.' });
+      return;
+    }
     const vault = readVault();
     const secret = vault.secrets[greetingId];
     if (!secret) {
-      res.status(404).json({ verified: false, message: 'Greeting verification not configured.' });
+      res.status(404).json({ verified: false, message: 'Greeting verification not found.' });
       return;
     }
 
@@ -491,18 +754,27 @@ async function startServer() {
 
   // View & report tracking
   app.post('/api/greetings/:id/view', (req, res) => {
-    const stats = readStats();
     const id = req.params.id;
+    if (!isValidGreetingId(id)) {
+      res.status(400).json({ error: 'Invalid greeting ID.' });
+      return;
+    }
+    const stats = readStats();
     stats.views[id] = (stats.views[id] || 0) + 1;
     writeStats(stats);
     res.json({ viewCount: stats.views[id] });
   });
 
   app.post('/api/greetings/:id/report', (req, res) => {
+    const id = req.params.id;
+    if (!isValidGreetingId(id)) {
+      res.status(400).json({ error: 'Invalid greeting ID.' });
+      return;
+    }
     const stats = readStats();
     const { reason } = req.body as { reason?: string };
     stats.reports.push({
-      greetingId: req.params.id,
+      greetingId: id,
       reason: String(reason || 'Inappropriate content').slice(0, 300),
       reportedAt: new Date().toISOString(),
     });
@@ -511,6 +783,7 @@ async function startServer() {
   });
 
   if (process.env.NODE_ENV !== 'production') {
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
@@ -518,10 +791,17 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     const distDir = path.join(ROOT_DIR, 'dist');
-    app.use(express.static(distDir));
-    app.get('*', (_req, res) => {
-      res.sendFile(path.join(distDir, 'index.html'));
-    });
+    const indexHtml = path.join(distDir, 'index.html');
+    if (fs.existsSync(indexHtml)) {
+      app.use(express.static(distDir));
+      app.get('*', (_req, res) => {
+        res.sendFile(indexHtml);
+      });
+    } else {
+      app.get('/', (_req, res) => {
+        res.json({ ok: true, service: 'keepsake-api', health: '/api/health' });
+      });
+    }
   }
 
   app.listen(PORT, '0.0.0.0', () => {

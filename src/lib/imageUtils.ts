@@ -1,7 +1,6 @@
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
+import { buildApiUrl } from './api';
 import { auth, storage } from './firebase';
-
-const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
 export async function compressImageFile(file: File, maxDimension = 1600, quality = 0.82): Promise<{ dataUrl: string; blob: Blob }> {
   return new Promise((resolve, reject) => {
@@ -95,7 +94,7 @@ export async function uploadMediaFile(
   } catch {
     // Fallback to protected Express media upload endpoint
     const idToken = await user.getIdToken();
-    const resp = await fetch(`${API_BASE}/api/media/upload`, {
+    const resp = await fetch(buildApiUrl('/media/upload'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -110,6 +109,51 @@ export async function uploadMediaFile(
     if (!resp.ok) {
       const errBody = (await resp.json().catch(() => ({}))) as { error?: string };
       throw new Error(errBody.error || 'Media upload failed. Ensure backend or Firebase Storage is configured.');
+    }
+    const result = (await resp.json()) as { url: string; sizeBytes: number };
+    return { url: result.url, sizeBytes: result.sizeBytes, storageProvider: 'server-uploads' };
+  }
+}
+
+export async function uploadVideoBlob(
+  blob: Blob,
+  greetingId: string,
+  fileName: string,
+  format: 'mp4' | 'webm'
+): Promise<{ url: string; sizeBytes: number; storageProvider: 'firebase-storage' | 'server-uploads' }> {
+  const user = auth.currentUser;
+  if (!user) {
+    throw new Error('Please sign in before attaching a video to your greeting.');
+  }
+  if (blob.size > 50 * 1024 * 1024) {
+    throw new Error('Video file exceeds the 50 MB attachment limit. Try 720p or Standard quality.');
+  }
+
+  const mimeType = format === 'mp4' ? 'video/mp4' : 'video/webm';
+  const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 60) || `video.${format}`;
+  const storagePath = `greetings/${user.uid}/${greetingId}/${Date.now()}_${safeName}`;
+
+  try {
+    const storageRef = ref(storage, storagePath);
+    const snap = await Promise.race([
+      uploadBytes(storageRef, blob, { contentType: mimeType }),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Storage timeout')), 15000)),
+    ]);
+    const url = await getDownloadURL(snap.ref);
+    return { url, sizeBytes: blob.size, storageProvider: 'firebase-storage' };
+  } catch {
+    const idToken = await user.getIdToken();
+    const resp = await fetch(buildApiUrl(`/video/upload?fileName=${encodeURIComponent(safeName)}`), {
+      method: 'POST',
+      headers: {
+        'Content-Type': mimeType,
+        Authorization: `Bearer ${idToken}`,
+      },
+      body: blob,
+    });
+    if (!resp.ok) {
+      const errBody = (await resp.json().catch(() => ({}))) as { error?: string };
+      throw new Error(errBody.error || 'Video upload failed.');
     }
     const result = (await resp.json()) as { url: string; sizeBytes: number };
     return { url: result.url, sizeBytes: result.sizeBytes, storageProvider: 'server-uploads' };

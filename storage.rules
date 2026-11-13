@@ -6,15 +6,22 @@ service firebase.storage {
       allow read, write: if false;
     }
 
-    // Greeting media uploaded by authenticated creators (max 10 MB per file)
+    // Greeting media uploaded by authenticated creators (max 10 MB image/audio, max 50 MB exported video)
     match /greetings/{userId}/{greetingId}/{fileName} {
       allow read: if true;
       allow write: if request.auth != null
         && request.auth.uid == userId
-        && request.resource.size <= 10 * 1024 * 1024
         && (
-          request.resource.contentType.matches('image/.*') ||
-          request.resource.contentType.matches('audio/.*')
+          (
+            request.resource.size <= 10 * 1024 * 1024
+            && (
+              request.resource.contentType.matches('image/.*') ||
+              request.resource.contentType.matches('audio/.*')
+            )
+          ) || (
+            request.resource.size <= 50 * 1024 * 1024
+            && request.resource.contentType in ['video/mp4', 'video/webm']
+          )
         );
       allow delete: if request.auth != null && request.auth.uid == userId;
     }

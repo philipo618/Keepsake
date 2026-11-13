@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ChevronLeft,
   ChevronRight,
+  Download,
+  Film,
   Gift,
   Heart,
   Image as ImageIcon,
@@ -12,9 +14,11 @@ import {
   RotateCcw,
   Volume2,
   VolumeX,
+  X,
 } from 'lucide-react';
 import { AnimationCanvas, triggerConfettiCelebration } from './AnimationCanvas';
 import { audioEngine } from '../lib/audioEngine';
+import { resolvePhotoTransition } from '../lib/catalog';
 import type {
   ExperienceStepKey,
   Greeting,
@@ -38,12 +42,15 @@ export function GreetingExperience({
   const [musicPlaying, setMusicPlaying] = useState(false);
   const [muted, setMuted] = useState(false);
   const [slideIndex, setSlideIndex] = useState(0);
+  const [prevSlideIndex, setPrevSlideIndex] = useState<number | null>(null);
+  const prevSlideRef = useRef(0);
   const [candlesLit, setCandlesLit] = useState(true);
   const [viewMode, setViewMode] = useState<PresentationMode>(
     greeting.designConfig.presentationMode || 'interactive-card'
   );
   const [storyStep, setStoryStep] = useState(0);
   const [brokenImages, setBrokenImages] = useState<Record<string, boolean>>({});
+  const [videoModalOpen, setVideoModalOpen] = useState(false);
 
   useEffect(() => {
     setViewMode(greeting.designConfig.presentationMode || 'interactive-card');
@@ -64,15 +71,40 @@ export function GreetingExperience({
     return [cover, ...list.filter((p) => p.id !== cover.id)];
   }, [greeting.photos]);
 
+  const goToSlide = (computeNext: (curr: number) => number) => {
+    setSlideIndex((curr) => {
+      const next = photos.length > 0 ? computeNext(curr) % photos.length : 0;
+      const safeNext = next < 0 ? (next + photos.length) % photos.length : next;
+      if (safeNext !== curr) {
+        prevSlideRef.current = curr;
+        setPrevSlideIndex(curr);
+      }
+      return safeNext;
+    });
+  };
+
+  const slideshowIntervalMs = Math.min(
+    12000,
+    Math.max(2000, greeting.designConfig.slideshowIntervalMs || 4500)
+  );
+  const transitionDurationMs = Math.min(
+    2500,
+    Math.max(250, greeting.designConfig.transitionDurationMs || 750)
+  );
+
   useEffect(() => {
     if (!opened || photos.length <= 1) return;
     if (viewMode === 'fullscreen-slideshow' || greeting.designConfig.photoLayout === 'slideshow') {
       const timer = window.setInterval(() => {
-        setSlideIndex((prev) => (prev + 1) % photos.length);
-      }, 4500);
+        setSlideIndex((prev) => {
+          prevSlideRef.current = prev;
+          setPrevSlideIndex(prev);
+          return (prev + 1) % photos.length;
+        });
+      }, slideshowIntervalMs);
       return () => window.clearInterval(timer);
     }
-  }, [opened, photos.length, viewMode, greeting.designConfig.photoLayout]);
+  }, [opened, photos.length, viewMode, greeting.designConfig.photoLayout, slideshowIntervalMs]);
 
   const startConfiguredMusic = async () => {
     if (!greeting.musicConfig?.enabled) return;
@@ -115,6 +147,7 @@ export function GreetingExperience({
     setMusicPlaying(false);
     setOpened(false);
     setSlideIndex(0);
+    setPrevSlideIndex(null);
     setStoryStep(0);
     setCandlesLit(true);
   };
@@ -174,50 +207,74 @@ export function GreetingExperience({
     greeting.animations.includes('animated-cake') ||
     greeting.animations.includes('candle-effects');
 
-  const renderPhotoCard = (photo: PhotoItem, idx: number, extraClass = '') => {
+  const getTransitionClass = (photo: PhotoItem) => {
+    const tx = resolvePhotoTransition(photo.transition || design.defaultPhotoTransition);
+    return `photo-tx-${tx}`;
+  };
+
+  const renderPhotoCard = (
+    photo: PhotoItem,
+    idx: number,
+    extraClass = '',
+    underlayPhoto?: PhotoItem | null,
+    keySuffix = ''
+  ) => {
     const isBroken = brokenImages[photo.id];
-    const transitionClass =
-      photo.transition === 'zoom'
-        ? 'transition-transform duration-700 hover:scale-105'
-        : photo.transition === 'polaroid-float'
-        ? 'animate-float-slow'
-        : 'transition-opacity duration-500';
+    const txClass = getTransitionClass(photo);
+    const txStyle = {
+      ['--photo-tx-duration' as string]: `${transitionDurationMs}ms`,
+    } as React.CSSProperties;
 
     return (
-      <figure
-        key={photo.id || idx}
-        className={`overflow-hidden rounded-xl border border-black/10 dark:border-white/10 bg-white/10 backdrop-blur-sm ${transitionClass} ${extraClass}`}
-      >
-        <div className="relative aspect-[4/3] w-full overflow-hidden bg-slate-200/40 dark:bg-slate-800/40">
-          {!isBroken && photo.url ? (
-            <img
-              src={photo.url}
-              alt={photo.caption || `Memory ${idx + 1}`}
-              referrerPolicy="no-referrer"
-              loading="lazy"
-              onError={() => setBrokenImages((prev) => ({ ...prev, [photo.id]: true }))}
-              className="w-full h-full object-cover"
-              style={{
-                objectPosition: `${photo.cropPosition?.x ?? 50}% ${photo.cropPosition?.y ?? 50}%`,
-                transform: `scale(${photo.cropPosition?.zoom ?? 1})`,
-              }}
-            />
-          ) : (
-            <div className="w-full h-full flex flex-col items-center justify-center p-4 text-center opacity-70">
-              <ImageIcon className="w-8 h-8 mb-2" />
-              <span className="text-xs">{photo.caption || 'Memory Photo'}</span>
-            </div>
-          )}
-        </div>
-        {(photo.caption || photo.attribution) && (
-          <figcaption className="px-3 py-2 text-xs opacity-85 flex items-center justify-between gap-2">
-            <span className="truncate">{photo.caption || ''}</span>
-            {photo.sourceType !== 'uploaded' && photo.attribution && (
-              <span className="opacity-65 shrink-0 text-[11px]">{photo.attribution}</span>
+      <div className="photo-tx-stage w-full">
+        <figure
+          key={`${photo.id || idx}-${keySuffix}`}
+          className={`overflow-hidden rounded-xl border border-black/10 dark:border-white/10 bg-white/10 backdrop-blur-sm ${txClass} ${extraClass}`}
+          style={txStyle}
+        >
+          <div className="relative aspect-[4/3] w-full overflow-hidden bg-slate-200/40 dark:bg-slate-800/40">
+            {underlayPhoto && underlayPhoto.id !== photo.id && underlayPhoto.url && !brokenImages[underlayPhoto.id] && (
+              <img
+                src={underlayPhoto.url}
+                alt=""
+                aria-hidden="true"
+                referrerPolicy="no-referrer"
+                className="absolute inset-0 w-full h-full object-cover opacity-35 pointer-events-none"
+                style={{
+                  objectPosition: `${underlayPhoto.cropPosition?.x ?? 50}% ${underlayPhoto.cropPosition?.y ?? 50}%`,
+                }}
+              />
             )}
-          </figcaption>
-        )}
-      </figure>
+            {!isBroken && photo.url ? (
+              <img
+                src={photo.url}
+                alt={photo.caption || `Memory ${idx + 1}`}
+                referrerPolicy="no-referrer"
+                loading="lazy"
+                onError={() => setBrokenImages((prev) => ({ ...prev, [photo.id]: true }))}
+                className="relative z-10 w-full h-full object-cover"
+                style={{
+                  objectPosition: `${photo.cropPosition?.x ?? 50}% ${photo.cropPosition?.y ?? 50}%`,
+                  transform: `scale(${photo.cropPosition?.zoom ?? 1})`,
+                }}
+              />
+            ) : (
+              <div className="relative z-10 w-full h-full flex flex-col items-center justify-center p-4 text-center opacity-70">
+                <ImageIcon className="w-8 h-8 mb-2" />
+                <span className="text-xs">{photo.caption || 'Memory Photo'}</span>
+              </div>
+            )}
+          </div>
+          {(photo.caption || photo.attribution) && (
+            <figcaption className="px-3 py-2 text-xs opacity-85 flex items-center justify-between gap-2">
+              <span className="truncate">{photo.caption || ''}</span>
+              {photo.sourceType !== 'uploaded' && photo.attribution && (
+                <span className="opacity-65 shrink-0 text-[11px]">{photo.attribution}</span>
+              )}
+            </figcaption>
+          )}
+        </figure>
+      </div>
     );
   };
 
@@ -286,12 +343,18 @@ export function GreetingExperience({
           <div key="photo-showcase" className="w-full space-y-3 animate-reveal-up">
             {design.photoLayout === 'slideshow' || photos.length === 1 ? (
               <div className="relative max-w-xl mx-auto">
-                {renderPhotoCard(photos[slideIndex % photos.length], slideIndex)}
+                {renderPhotoCard(
+                  photos[slideIndex % photos.length],
+                  slideIndex,
+                  '',
+                  prevSlideIndex !== null ? photos[prevSlideIndex % photos.length] : null,
+                  `slide-${slideIndex}`
+                )}
                 {photos.length > 1 && (
                   <div className="mt-3 flex items-center justify-center gap-3">
                     <button
                       type="button"
-                      onClick={() => setSlideIndex((prev) => (prev - 1 + photos.length) % photos.length)}
+                      onClick={() => goToSlide((prev) => prev - 1)}
                       className="min-h-[44px] min-w-[44px] rounded-full border border-current/20 flex items-center justify-center hover:bg-white/10"
                       aria-label="Previous photo"
                     >
@@ -302,7 +365,7 @@ export function GreetingExperience({
                     </span>
                     <button
                       type="button"
-                      onClick={() => setSlideIndex((prev) => (prev + 1) % photos.length)}
+                      onClick={() => goToSlide((prev) => prev + 1)}
                       className="min-h-[44px] min-w-[44px] rounded-full border border-current/20 flex items-center justify-center hover:bg-white/10"
                       aria-label="Next photo"
                     >
@@ -395,6 +458,9 @@ export function GreetingExperience({
     return true;
   });
 
+  const activeFullscreenPhoto = photos.length > 0 ? photos[slideIndex % photos.length] : null;
+  const activeFullscreenTxClass = activeFullscreenPhoto ? getTransitionClass(activeFullscreenPhoto) : 'photo-tx-fade';
+
   return (
     <div
       className={`relative w-full overflow-hidden rounded-2xl border border-slate-200/60 dark:border-slate-800/80 ${
@@ -474,6 +540,23 @@ export function GreetingExperience({
               ) : (
                 <Maximize2 className="w-4 h-4" />
               )}
+            </button>
+          )}
+
+          {opened && greeting.exportedVideo?.url && (
+            <button
+              type="button"
+              onClick={() => {
+                if (musicPlaying) {
+                  audioEngine.stop();
+                  setMusicPlaying(false);
+                }
+                setVideoModalOpen(true);
+              }}
+              className="min-h-[38px] px-3 py-1.5 rounded-lg bg-rose-700 hover:bg-rose-800 text-white text-xs font-medium flex items-center gap-1.5 shadow-sm"
+            >
+              <Film className="w-3.5 h-3.5" />
+              <span>Play Video</span>
             </button>
           )}
 
@@ -561,21 +644,29 @@ export function GreetingExperience({
               )}
             </div>
           </div>
-        ) : viewMode === 'fullscreen-slideshow' && photos.length > 0 ? (
-          <div className="w-full max-w-4xl mx-auto space-y-6 text-center">
-            <div className="relative aspect-[16/10] w-full rounded-2xl overflow-hidden shadow-2xl border border-white/15">
+        ) : viewMode === 'fullscreen-slideshow' && activeFullscreenPhoto ? (
+          <div className="w-full max-w-4xl mx-auto space-y-6 text-center photo-tx-stage">
+            <div
+              key={`fs-${activeFullscreenPhoto.id}-${slideIndex}`}
+              className={`relative aspect-[16/10] w-full rounded-2xl overflow-hidden shadow-2xl border border-white/15 ${activeFullscreenTxClass}`}
+              style={{ ['--photo-tx-duration' as string]: `${transitionDurationMs}ms` }}
+            >
               <img
-                src={photos[slideIndex % photos.length].url}
-                alt={photos[slideIndex % photos.length].caption || greeting.title}
+                src={activeFullscreenPhoto.url}
+                alt={activeFullscreenPhoto.caption || greeting.title}
                 referrerPolicy="no-referrer"
                 className="w-full h-full object-cover"
+                style={{
+                  objectPosition: `${activeFullscreenPhoto.cropPosition?.x ?? 50}% ${activeFullscreenPhoto.cropPosition?.y ?? 50}%`,
+                  transform: `scale(${activeFullscreenPhoto.cropPosition?.zoom ?? 1})`,
+                }}
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/25 to-transparent flex flex-col justify-end p-6 sm:p-8 text-left text-white">
                 <h2 className={`${fontClass} text-2xl sm:text-4xl font-semibold`}>
                   {greeting.title}
                 </h2>
                 <p className="mt-2 text-sm sm:text-base text-white/90 max-w-2xl line-clamp-3">
-                  {photos[slideIndex % photos.length].caption || greeting.mainMessage}
+                  {activeFullscreenPhoto.caption || greeting.mainMessage}
                 </p>
               </div>
             </div>
@@ -583,7 +674,7 @@ export function GreetingExperience({
             <div className="flex items-center justify-center gap-4">
               <button
                 type="button"
-                onClick={() => setSlideIndex((prev) => (prev - 1 + photos.length) % photos.length)}
+                onClick={() => goToSlide((prev) => prev - 1)}
                 className="min-h-[44px] px-4 rounded-xl bg-black/25 hover:bg-black/35 text-sm font-medium"
               >
                 Previous
@@ -593,7 +684,7 @@ export function GreetingExperience({
               </span>
               <button
                 type="button"
-                onClick={() => setSlideIndex((prev) => (prev + 1) % photos.length)}
+                onClick={() => goToSlide((prev) => prev + 1)}
                 className="min-h-[44px] px-4 rounded-xl bg-black/25 hover:bg-black/35 text-sm font-medium"
               >
                 Next
@@ -637,14 +728,69 @@ export function GreetingExperience({
       </div>
 
       {/* Bottom Meta Bar */}
-      <div className="relative z-20 px-4 sm:px-6 pb-4 flex items-center justify-between text-xs opacity-65">
+      <div className="relative z-20 px-4 sm:px-6 pb-4 flex flex-wrap items-center justify-between gap-2 text-xs opacity-75">
         <span>Keepsake Digital Gift</span>
-        {!isPreview && onReport && (
-          <button type="button" onClick={onReport} className="hover:underline min-h-[36px] px-2">
-            Report Card
-          </button>
-        )}
+        <div className="flex items-center gap-3">
+          {opened && greeting.exportedVideo?.url && (
+            <a
+              href={greeting.exportedVideo.url}
+              download={greeting.exportedVideo.fileName || 'Keepsake_Memory.mp4'}
+              className="hover:underline min-h-[36px] px-2 inline-flex items-center gap-1 font-medium"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Download Video</span>
+            </a>
+          )}
+          {!isPreview && onReport && (
+            <button type="button" onClick={onReport} className="hover:underline min-h-[36px] px-2">
+              Report Card
+            </button>
+          )}
+        </div>
       </div>
+
+      {/* Optional Video Playback Modal for Recipients */}
+      {videoModalOpen && greeting.exportedVideo?.url && (
+        <div className="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="w-full max-w-3xl rounded-2xl border border-slate-800 bg-[#0B0F17] text-white overflow-hidden shadow-2xl">
+            <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="font-display text-base font-semibold truncate">{greeting.title}</p>
+                <p className="text-[11px] text-slate-400">
+                  Video Keepsake · {greeting.exportedVideo.width}×{greeting.exportedVideo.height}
+                </p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <a
+                  href={greeting.exportedVideo.url}
+                  download={greeting.exportedVideo.fileName || 'Keepsake_Memory.mp4'}
+                  className="min-h-[40px] px-3.5 rounded-lg bg-rose-700 hover:bg-rose-800 text-xs font-medium inline-flex items-center gap-1.5"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Download</span>
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setVideoModalOpen(false)}
+                  aria-label="Close video player"
+                  className="min-h-[40px] min-w-[40px] rounded-lg border border-slate-700 hover:bg-slate-800 flex items-center justify-center"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+            <div className="p-3 sm:p-4 bg-black">
+              <video
+                controls
+                autoPlay
+                playsInline
+                src={greeting.exportedVideo.url}
+                className="w-full max-h-[70vh] rounded-xl mx-auto"
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
